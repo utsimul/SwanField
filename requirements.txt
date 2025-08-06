@@ -1,2 +1,5 @@
 arch
 ta
+pandas
+numpy
+torch
