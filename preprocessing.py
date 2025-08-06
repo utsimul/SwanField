@@ -280,6 +280,20 @@ def process_asset_data(data_dict, ticker, augment=False):
     if df_normalized is None:
         return None, None
 
+    # Verify scaling for autoencoders
+    autoencoder_columns = ['open', 'high', 'low', 'close', 'volume', 'SMA_10', 'EMA_10', 'RSI_14', 'BB_High', 'BB_Low', 'Volatility_10', 'Hurst', 'GARCH_Vol']
+    for col in autoencoder_columns:
+        if col in df_normalized.columns:
+            min_val, max_val = df_normalized[col].min(), df_normalized[col].max()
+            if not (0 <= min_val <= 1 and 0 <= max_val <= 1):
+                print(YELLOW + f"Warning: Column {col} not scaled to [0, 1] (min={min_val:.4f}, max={max_val:.4f})" + ENDC)
+
+    # Exclude regime_state for GOOGL or impute for AAPL
+    if ticker == 'GOOGL' and 'regime_state' in df_normalized.columns:
+        df_normalized = df_normalized.drop(columns='regime_state', errors='ignore')
+    elif 'regime_state' in df_normalized.columns:
+        df_normalized['regime_state'] = df_normalized['regime_state'].ffill().bfill()
+
     if augment:
         df_normalized = augment_data(df_normalized)
         if df_normalized is None:
@@ -288,6 +302,7 @@ def process_asset_data(data_dict, ticker, augment=False):
     returns = df_normalized['Log_Returns'].dropna() * 100
     garch_vol = fit_garch_model(returns)
     df_normalized['GARCH_Vol'] = garch_vol
+    df_normalized['GARCH_Vol'] = MinMaxScaler().fit_transform(df_normalized[['GARCH_Vol']].values.reshape(-1, 1)).flatten()
 
     print(GREEN + f"Final processed data for {ticker} ------------------------------------" + ENDC)
     print(df_normalized)
