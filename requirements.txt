@@ -3,3 +3,5 @@ ta
 pandas
 numpy
 torch
+hmmlearn
+scipy
