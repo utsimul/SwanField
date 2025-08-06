@@ -8,12 +8,72 @@ from ta.volatility import BollingerBands
 from ta.momentum import RSIIndicator
 import datetime
 from scipy.stats import norm
+from hmmlearn.hmm import GaussianHMM
 
 RED = '\033[91m'
 GREEN = '\033[92m'
 YELLOW = '\033[93m'
 BLUE = '\033[94m'
 ENDC = '\033[0m'
+
+def fetch_data():
+    tickers = ['AAPL','MSFT','GOOGL']
+    data = yf.download(tickers, start="2020-01-01", end="2024-12-31")
+    ticker_dfs = {}
+
+    for ticker in tickers:
+        ticker_data = data.xs(ticker, axis=1, level=1)
+    
+    
+        ticker_data.columns = [col.lower() for col in ticker_data.columns]
+    
+    
+        ticker_dfs[ticker] = ticker_data
+
+        rolling_window=21
+
+
+    # Prepare an output dictionary for enriched features
+    enriched_ticker_data = {}
+    
+    # Iterate through each ticker
+    for ticker, df in ticker_dfs.items():
+        df = df.copy()
+    
+        # Calculate returns
+        df["return"] = np.log(df["close"] / df["close"].shift(1))
+    
+        # Rolling 21-day volatility
+        df["volatility"] = df["return"].rolling(window=rolling_window).std()
+    
+        # Momentum: rolling average return (21d)
+        df["momentum"] = df["return"].rolling(window=21).mean()
+    
+        # Sharpe ratio (annualized): mean / std * sqrt(252)
+        df["sharpe_ratio"] = (df["momentum"] / df["volatility"]) * np.sqrt(252)
+    
+        hmm_features = df[["return", "volatility"]].dropna()
+    
+        try:
+            hmm = GaussianHMM(n_components=3, covariance_type="full", n_iter=1000, random_state=42)
+            hmm.fit(hmm_features + 1e-6 * np.random.randn(*hmm_features.shape))  # small noise
+            regimes = hmm.predict(hmm_features)
+    
+            # Align regimes safely
+            df.loc[hmm_features.index, "regime_state"] = regimes
+    
+        except Exception as e:
+            print(f"⚠️ HMM failed for {ticker}: {e}")
+            df["regime_state"] = np.nan
+    
+        enriched_ticker_data[ticker] = df
+    
+    
+    # ✅ Example: view features for AAPL
+    print(enriched_ticker_data["AAPL"].head())
+    return enriched_ticker_data
+
+
 
 def clean_data(df, ticker):
     """
@@ -249,7 +309,7 @@ def process_multiple_assets(data_dict, tickers, augment=False):
 
 if __name__ == "__main__":
     # Replace with your actual data dictionary
-    data_dict = enriched_ticker_data
+    data_dict = fetch_data()
     tickers = ['AAPL', 'GOOGL']
 
     results = process_multiple_assets(data_dict, tickers, augment=False)
