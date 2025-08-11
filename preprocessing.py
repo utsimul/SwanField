@@ -1,4 +1,4 @@
-
+import yfinance as yf
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
@@ -323,7 +323,7 @@ def process_multiple_assets(data_dict, tickers, augment=False):
     return results
 
 if __name__ == "__main__":
-    # Replace with your actual data dictionary
+    
     data_dict = fetch_data()
     tickers = ['AAPL', 'GOOGL']
 
