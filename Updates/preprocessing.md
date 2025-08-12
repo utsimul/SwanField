@@ -19,13 +19,13 @@ As you can see, most features are scaled and all seem proper.
 Here is the intuition behind some of these features:
 
 
-##### GARCH volatility forecasting:
+#### GARCH volatility forecasting:
 
 Main assumption by GARCH is that volatility clusters - so there are periods of high volatility where the large price fluctuations are followed by large price fluctuations. 
 The GARCH value is relative predicted volatility so you can identify periods of high and low volatility that may occur in the future. It is not in the same unit as true volatility,
 hence the significant difference in value. To get the original volatility from GARCH value, use `scalers['GARCH_Vol'].inverse_transform(df_normalized[['GARCH_Vol']])`
 
-##### Hurst exponent:
+#### Hurst exponent:
 
 Hurst = 0.5 (Random Walk): The series behaves like a pure random walk (e.g., Brownian motion) – no trends or patterns, purely unpredictable. Markets are often close to this in efficient conditions.
 Hurst > 0.5 (Persistent/Trending): Positive autocorrelation; if prices have been rising, they're likely to continue rising. This indicates "momentum" or trending behavior, common in bull markets.
@@ -40,3 +40,14 @@ For example, patterns at t=10 might look similar to patterns at t=350 (say), but
 
 Thus, we apply some transforms (Hurst_transforms.py) to analyse this. 
 
+![alt text](Hurst_Fourier.png)
+
+From this image, you can see that there isn't a single dominant frequency, or even two. 
+No "peak then near 0" because markets are broad-spectrum: power is distributed across many frequencies, not concentrated in a few.
+The descending order (long to short) suggests self-similarity is stronger at medium-long scales (40-80 days), fading at very short (<5 days, high-frequency noise) or very long (>100 days, limited by data length ~1252 days).
+
+One might raise a question that self-similarity == similarity between patterns in two (for comparison) timeframes == needing two inputs. Then why are we taking one input and calculating y on that and then are able to tell whether the price patterns at those two inputs "match"?
+
+Fourier calculates how much the graph repeats itself over 1 "wrapping frequency" (consider watching 3Blue1Brown video) - so for that particular timescale, how many times the patterns occur similarly.
+
+But now, what if over t=t1, the pattern doesn't repeat "itself" often - it repeats only a tiny bit. But, t=t2 contains many repeating patterns which are similar to the ones at t=t2. Now, F(t2) will be considerable but F(t1) wouldn't. And yet, we can construct a sort of "fractal" representation from t1 to t2. How do we do that?
