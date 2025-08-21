@@ -191,6 +191,9 @@ def process_asset_data(data_dict, ticker, augment=False):
         print(YELLOW + f"GARCH failed for {ticker}; using rolling std as fallback" + ENDC)
         df_features['GARCH_Vol'] = df_features['Log_Returns'].rolling(window=21).std() * np.sqrt(252)
     df_features['GARCH_Vol'] = df_features['GARCH_Vol'].interpolate().ffill().bfill()
+    print(BLUE + "trying on fixes" + ENDC)
+    df_features['GARCH_Vol'] = np.sqrt(df_features['GARCH_Vol']) #this works
+    #df['GARCH_Vol'] = df['GARCH_Vol'] / np.sqrt(252)
 
     df_normalized, scalers = normalize_data(df_features)
     if df_normalized is None:
