@@ -4,6 +4,9 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Categorical, Normal
 
+#Dont forget:
+# - CONCAT MEMORY ONTO NON SEQ DATA either in train.py or here
+
 
 class Asset_Seq_Encoder(nn.Module):
 
@@ -130,6 +133,8 @@ class AssetAgent(nn.Module):
     
     def act(self, seq_data, non_seq_data):
 
+        #CONCAT MEMORY ONTO NON SEQ DATA - EITHER HERE OR IN TRAINING LOOP AND SEND
+
         seq_data = seq_data.to(self.device)
         non_seq_data = non_seq_data.to(self.device)
         bhs_dist, ast_to_dom_dist, mem_update_dist, value = self.policynet(seq_data, non_seq_data)
@@ -152,17 +157,20 @@ class AssetAgent(nn.Module):
     
     def evaluate(self, seq_data, non_seq_data, actions):
         """Recompute logprobs + entropy + value for PPO update."""
+
+        #CONCAT MEMORY ONTO NON SEQ DATA - EITHER HERE OR IN TRAINING LOOP AND SEND
+
         seq_data = seq_data.to(self.device)
         non_seq_data = non_seq_data.to(self.device)
 
         bhs_dist, atod_dist, mem_dist, value = self.policynet(seq_data, non_seq_data)
 
         a1, a2, a3 = actions
-        bhs = bhs_dist.log_prob(a1)
-        atod = atod_dist.log_prob(a2).sum(-1)
-        mem_upd = mem_dist.log_prob(a3).sum(-1)
+        bhs_p = bhs_dist.log_prob(a1)
+        atod_p = atod_dist.log_prob(a2).sum(-1)
+        mem_upd_p = mem_dist.log_prob(a3).sum(-1)
 
-        logprob = bhs + atod + mem_upd
+        logprob = bhs_p + atod_p + mem_upd_p
         entropy = (bhs_dist.entropy() + atod_dist.entropy().sum(-1) + mem_dist.entropy().sum(-1)).mean()
         return logprob, entropy, value
 
@@ -187,7 +195,7 @@ class AssetAgent(nn.Module):
         old_logprobs = rollouts["old_logprobs"].to(self.device)
         returns = rollouts["returns"].to(self.device)
         advantages = rollouts["advantages"].to(self.device)
-        #returns and advantages calculated in train.py file
+        #returns and advantages calculated in train.py file in training loop
 
         logprobs, entropy, values = self.evaluate(seq_data, non_seq_data, actions)
         #multiple rows (mini batches) can be evaluated by pytorch just as well as a single row.
@@ -202,9 +210,13 @@ class AssetAgent(nn.Module):
         actor_loss = -torch.min(surr1, surr2).mean()
 
         value_loss = (returns - values).pow(2).mean()
+        #critic training -> critic learns to estimate return value so we train it using regression (MSE)
 
         loss = actor_loss + self.c1 * value_loss - self.c2* entropy
+        #entropy increases => loss decreases (supports exploration => higher entropy means more exploration)
+        #since actor and critic share the same network we backpropagate it with the same loss (thus add it).
 
+        #magic statements
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
