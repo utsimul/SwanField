@@ -176,14 +176,15 @@ class AssetAgent(nn.Module):
         seq_data = seq_data.to(self.device)
         non_seq_data = non_seq_data.to(self.device)
 
-        bhs_dist, atod_dist, mem_dist, value = self.policynet(seq_data, non_seq_data)
+        bhs_dist, atod_dist, mem_dist, trade_frac_dist, value = self.policynet(seq_data, non_seq_data)
 
-        a1, a2, a3 = actions
+        a1, a2, a3, a4 = actions
         bhs_p = bhs_dist.log_prob(a1)
         atod_p = atod_dist.log_prob(a2).sum(-1)
         mem_upd_p = mem_dist.log_prob(a3).sum(-1)
+        trade_frac_p = trade_frac_dist.log_prob(a4).sum(-1)
 
-        logprob = bhs_p + atod_p + mem_upd_p
+        logprob = bhs_p + atod_p + mem_upd_p + trade_frac_p
         entropy = (bhs_dist.entropy() + atod_dist.entropy().sum(-1) + mem_dist.entropy().sum(-1)).mean()
         return logprob, entropy, value
 
@@ -232,6 +233,7 @@ class AssetAgent(nn.Module):
         #magic statements
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policynet.parameters(), max_norm=0.5)
         self.optimizer.step()
 
         return {
@@ -240,3 +242,16 @@ class AssetAgent(nn.Module):
             "value_loss": value_loss.item(),
             "entropy": entropy.item()
         }
+
+class AssetRolloutBuffer:
+    def __init__(self):
+        self.seq_data = []
+        self.non_seq_data = []
+        self.actions = []
+        self.logprobs = []
+        self.values = []
+        self.rewards = []
+        self.dones = []
+    
+    def clear(self):
+        self.__init__()

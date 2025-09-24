@@ -13,7 +13,7 @@ class DomainPolicyNet(nn.Module):
             h_asset_dim : int,
             master_signal_dim : int,
             memory_dim : int = 1,
-            num_signal : int = 2,
+            num_signal : int = 2, #signal sent from domain to master
             min_std : float = 1e-3,
             hidden_dim : int = 128,
     ):
@@ -185,6 +185,7 @@ class DomainAgent(nn.Module):
         #magic statements
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policynet.parameters(), max_norm=0.5)
         self.optimizer.step()
 
         return {
