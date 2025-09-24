@@ -51,6 +51,10 @@ class AssetPolicyNet(nn.Module):
         self.shared_net = nn.Linear(hidden_dim_seq + non_seq_input_dim, hidden_dim)
         self.actor_bhs = nn.Linear(hidden_dim, num_discrete) #actor head 1: BUY HOLD SELL
 
+        #fraction of trades made 
+        self.trade_frac_mean = nn.Linear(hidden_dim, 1)
+        self.trade_frac_std = nn.Linear(hidden_dim, 1)
+
         self.asset_to_domain_mean = nn.Linear(hidden_dim, num_signal) #actor head 2: signal to domain agent
         self.asset_to_domain_std = nn.Linear(hidden_dim, num_signal)
         #if num_signals are 2, means we want the policy to determine 2 values. This means we create 2 gaussian 
@@ -87,10 +91,17 @@ class AssetPolicyNet(nn.Module):
         mem_logstd = self.mem_update_std(net_enc_hidden).clamp(min=torch.log(torch.tensor(self.min_std))) #gives 2 log std
         mem_std = mem_logstd.exp() #calculate logstd to ensure that values are positive
         mem_update = Normal(mem_mean, mem_std)
+
+        # TRADE FRACTION HEAD (continuous between 0 and 1)
+        frac_mean = torch.sigmoid(self.trade_frac_mean(net_enc_hidden))  # ensures [0,1]
+        frac_logstd = self.trade_frac_std(net_enc_hidden).clamp(min=torch.log(torch.tensor(self.min_std)))
+        frac_std = frac_logstd.exp()
+        trade_frac = Normal(frac_mean, frac_std)
+
     
         value = self.critic(net_enc_hidden).squeeze(-1)
     
-        return bhs, ast_to_dom, mem_update, value
+        return bhs, ast_to_dom, mem_update, trade_frac, value
 
 
 class AssetAgent(nn.Module):
@@ -104,7 +115,7 @@ class AssetAgent(nn.Module):
             hidden_dim = 128,
             num_discrete = 3,
             memory_dim = 1,
-            num_signal = 2,
+            num_signal = 2, #signal sent from asset to domain
             min_std = 1e-3,
             lr = 3e-4,
             clip_eps = 0.2,
@@ -137,23 +148,25 @@ class AssetAgent(nn.Module):
 
         seq_data = seq_data.to(self.device)
         non_seq_data = non_seq_data.to(self.device)
-        bhs_dist, ast_to_dom_dist, mem_update_dist, value = self.policynet(seq_data, non_seq_data)
+        bhs_dist, ast_to_dom_dist, mem_update_dist, trade_frac_dist, value = self.policynet(seq_data, non_seq_data)
 
         #1. SAMPLING FROM DISTRIBUTIONS
         bhs = bhs_dist.sample()
         ast_to_dom = ast_to_dom_dist.sample()
         mem_update = mem_update_dist.sample()
-        
+        trade_frac = trade_frac_dist.sample().clamp(0, 1)
+
         #2. CALCULATING LOG PROBS 
         bhs_logprob = bhs_dist.log_prob(bhs) #need log probabilities for policy gradient calculation
 
         ast_to_dom_logprobs = ast_to_dom_dist.log_prob(ast_to_dom).sum(-1) 
         #continuous product of probs = continuous sum of log probs
-
         mem_update_logprobs = mem_update_dist.log_prob(mem_update).sum(-1)
-        total_logprob = bhs_logprob + ast_to_dom_logprobs + mem_update_logprobs
+        trade_frac_logprob = trade_frac_dist.log_prob(trade_frac).sum(-1)
 
-        return (bhs, ast_to_dom, mem_update), total_logprob, value
+        total_logprob = bhs_logprob + ast_to_dom_logprobs + mem_update_logprobs + trade_frac_logprob
+
+        return (bhs, ast_to_dom, mem_update, trade_frac), total_logprob, value
     
     def evaluate(self, seq_data, non_seq_data, actions):
         """Recompute logprobs + entropy + value for PPO update."""
