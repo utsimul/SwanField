@@ -22,7 +22,7 @@ class MasterPolicyNet(nn.Module):
         self.attentionpool = attention_pool(num_domains, h_domain_dim)
         
         self.shared_net = nn.Linear(h_domain_dim + memory_dim, hidden_dim)
-        self.actor_port_alloc = nn.Linear(hidden_dim, num_domains + 1)
+        self.actor_port_alloc = nn.Linear(hidden_dim, num_domains + 1) #+1 for "cash"
 
         self.mem_update_mean = nn.Linear(hidden_dim, memory_dim) #actor head 3: memory update value
         self.mem_update_std = nn.Linear(hidden_dim, memory_dim)

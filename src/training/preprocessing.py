@@ -229,12 +229,32 @@ def process_multiple_assets(data_dict, tickers, augment=False):
         print(GREEN + f"Processed data for ticker {ticker}" + ENDC)
     return results
 
-if __name__ == "__main__":
-    data_dict = fetch_data(tickers=['AAPL', 'GOOGL'])
-    results = process_multiple_assets(data_dict, ['AAPL', 'GOOGL'], augment=False)
-    for ticker, result in results.items():
-        df_processed = result['data']
-        if df_processed is not None:
-            print(f"Processed data shape for {ticker}: {df_processed.shape}")
-            print(f"Date range: {df_processed.index.min()} to {df_processed.index.max()}")
-            print(f"GARCH Volatility (last): {df_processed['GARCH_Vol'].iloc[-1]:.4f}")
+def run(tickers, start_date, end_date, augment, otpt_show, save=True, outdir="output_data"):
+    import os
+    
+    if save:
+        os.makedirs(outdir, exist_ok=True)
+
+    data_dict = fetch_data(tickers, start_date, end_date)
+    results = process_multiple_assets(data_dict, tickers, augment=augment)
+    
+    if otpt_show:
+        for ticker, result in results.items():
+            df_processed = result['data']
+            if df_processed is not None:
+                print(f"Processed data shape for {ticker}: {df_processed.shape}")
+                print(f"Date range: {df_processed.index.min()} to {df_processed.index.max()}")
+                print(f"GARCH Volatility (last): {df_processed['GARCH_Vol'].iloc[-1]:.4f}")
+    
+    if save:
+        for ticker, result in results.items():
+            df_processed = result['data']
+            if df_processed is not None:
+                filename = os.path.join(outdir, f"{ticker}_processed.csv")
+                df_processed.to_csv(filename, index=True)
+                print(GREEN + f"Saved processed data for {ticker} to {filename}" + ENDC)
+
+    return results
+
+
+
