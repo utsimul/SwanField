@@ -152,10 +152,27 @@ domain_mem_param = 0.1
 master_mem_param = 0.1
 gamma = 0.99
 
+
+device = getattr(AssetAG, "device", torch.device("cpu"))
 # define memories - assuming each memory contains 1 value (for now)
-master_mem = 0.0
-domain_mem = [0.0 for _ in range(num_domains)]
-asset_mems = [[0.0 for _ in range(len(domain_wise_tickers[d]))] for d in domain_wise_tickers]  # not used directly, but for shape
+master_memory_dim = 1
+domain_memory_dim = 1
+asset_memory_dim = 1
+master_mem = torch.zeros(1, master_memory_dim, device=device)
+
+domain_mems = {
+    domain: torch.zeros(1, domain_memory_dim, device=device)
+    for domain in domain_wise_tickers.keys()
+}
+
+asset_mems = {
+    domain: {
+        asset: torch.zeros(1, asset_memory_dim, device=device)
+        for asset in assets
+    }
+    for domain, assets in domain_wise_tickers.items()
+}
+#memories are initialized in dictionaries
 
 # set equal capital to all (initialization)
 domain_allocs = []
@@ -166,7 +183,7 @@ domain_cur_holdings = []
 asset_cur_holdings = []
 
 for domain, assets in domain_wise_tickers.items():
-    domain_allocs.append(total_portfolio_value / num_domains)
+    domain_allocs.append(1 / num_domains)
     domain_cur_holdings.append(0.0)
     asset_alloc = []
     asset_mem = []
@@ -245,6 +262,7 @@ for epoch in range(num_epochs):
             # iterate domains and assets
             for domain, assets in domain_wise_tickers.items():
                 d_idx = domain_indices[domain]
+                domain_mem = domain_mems[domain]
                 asset_to_domain_sig_domain = []  # for this domain this window
 
                 # accumulate domain-level P&L
@@ -252,6 +270,7 @@ for epoch in range(num_epochs):
 
                 for asset in assets:
                     a_idx = asset_indices[asset]
+                    asset_mem = asset_mems[asset]
 
                     # obtain seq window for this asset at episode_idx
                     # train_data[asset] is numpy array shape [num_windows, T, F]
@@ -264,10 +283,12 @@ for epoch in range(num_epochs):
                     seq_in = seq_tensor.unsqueeze(0).to(AssetAG.device)       # [1, T, F]
                     non_seq_in = non_seq_tensor.unsqueeze(0).to(AssetAG.device)  # [1, 2]
 
-                    (actions, total_logprob, value) = AssetAG.act(seq_data=seq_in, non_seq_data=non_seq_in)
-                    # actions = (bhs, ast_to_dom, mem_update, trade_frac)
                     asset_buffer["seq_data"].append(seq_tensor)  # store [T, F]
                     asset_buffer["non_seq_data"].append(non_seq_tensor)
+
+                    (actions, total_logprob, value) = AssetAG.act(seq_data=seq_in, non_seq_data=non_seq_in)
+                    # actions = (bhs, ast_to_dom, mem_update, trade_frac)
+                    
 
                     # squeeze batch dim (we called with [1,...])
                     bhs = actions[0].squeeze(0).detach()
@@ -276,7 +297,7 @@ for epoch in range(num_epochs):
                     trade_frac = actions[3].squeeze(0).detach()
 
                     # execute buy/hold/sell using trade_frac and bhs
-                    asset_cap = asset_allocs[d_idx][a_idx]
+                    asset_cap = asset_allocs[d_idx][a_idx] * total_portfolio_value
                     target_holding = float(trade_frac.item()) * asset_cap
                     trade_amount = target_holding - asset_cur_holdings[d_idx][a_idx]
 
@@ -291,9 +312,9 @@ for epoch in range(num_epochs):
 
                     # calculate asset return for this window: use close price column index 0 assumption
                     # Make sure train_data[asset] is [windows, T, F] and that close is at index 0
-                    p_t = train_data[asset][episode_idx][0]  # close at t (this is an assumption)
+                    p_t = train_data[asset][episode_idx][window_offset][0]  # close at t (this is an assumption)
                     if episode_idx < num_episodes - 1:
-                        p_t_plus_1 = train_data[asset][episode_idx + 1][0]
+                        p_t_plus_1 = train_data[asset][episode_idx + 1][window_offset][0]
                     else:
                         p_t_plus_1 = p_t
                     frac = p_t_plus_1 / p_t if p_t != 0 else 1.0
@@ -328,7 +349,7 @@ for epoch in range(num_epochs):
                     # prepare domain input: stack asset signals to shape [1, num_assets, num_signal]
                     atod_stack = torch.stack(asset_to_domain_sig_domain).unsqueeze(0).to(DeviceIfExists := AssetAG.device)
                     dom_nonseq = torch.tensor([domain_mem[d_idx], domain_allocs[d_idx]]).unsqueeze(0).to(DeviceIfExists)
-                    dom_actions, dom_logprob, dom_value, dom_alloc_distn = DomainAG.act(atod_stack, dom_nonseq)
+                    dom_actions, dom_logprob, dom_value, dom_alloc_distn = DomainAG.act(atod_stack, dom_nonseq, domain_mem[d_idx])
                     # squeeze and detach outputs similar to asset-level
                     domain_buffer["actions"].append(dom_actions)
                     domain_buffer["old_logprobs"].append(dom_logprob.detach().cpu())
