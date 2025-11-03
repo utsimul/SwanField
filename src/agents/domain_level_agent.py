@@ -18,7 +18,7 @@ class DomainPolicyNet(nn.Module):
             hidden_dim : int = 128,
     ):
         super().__init__()
-        self.attentionpool = attention_pool(num_assets, h_asset_dim)
+        self.attentionpool = attention_pool(h_asset_dim)
 
         self.shared_net = nn.Linear(h_asset_dim + memory_dim + master_signal_dim, hidden_dim)
         self.actor_port_alloc = nn.Linear(hidden_dim, num_assets + 1) #+1 for "cash" token for unallocated cash
@@ -36,6 +36,10 @@ class DomainPolicyNet(nn.Module):
     def forward(self, h_assets, master_signal, mem):
 
         h_sector, alphas = self.attentionpool(h_assets)
+        if mem.dim() == 1:
+            mem = mem.unsqueeze(0)
+        if mem.size(0) != h_assets.size(0):
+            mem = mem.expand(h_assets.size(0), -1)
         net_x = torch.cat([h_sector, master_signal, mem], dim=1)
         h = F.relu(self.shared_net(net_x))
 
@@ -119,7 +123,7 @@ class DomainAgent(nn.Module):
         alloc_log_prob = alloc_distn.log_prob(allocations)
         entropy = alloc_distn.entropy()
         dtom_logprob = dtom_dist.log_prob(dtom).sum(-1)
-        mem_update_logprob = mem_update_dist.logprob(mem_update).sum(-1)
+        mem_update_logprob = mem_update_dist.log_prob(mem_update).sum(-1)
 
         total_logprob = alloc_log_prob + dtom_logprob + mem_update_logprob
 

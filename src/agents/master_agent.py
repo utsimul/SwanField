@@ -19,7 +19,7 @@ class MasterPolicyNet(nn.Module):
     ):
         
         super().__init__()
-        self.attentionpool = attention_pool(num_domains, h_domain_dim)
+        self.attentionpool = attention_pool(h_domain_dim)
         
         self.shared_net = nn.Linear(h_domain_dim + memory_dim, hidden_dim)
         self.actor_port_alloc = nn.Linear(hidden_dim, num_domains + 1) #+1 for "cash"
