@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Categorical, Normal
-from helpernets import attention_pool
+#from helpernets import attention_pool
 #MASTER AGENT WILL USE AN INSTANCE OF THE SAME CLASS AS DOMAIN ATTENTION POOL FOR POOLING
 
 class MasterPolicyNet(nn.Module):
@@ -32,7 +32,12 @@ class MasterPolicyNet(nn.Module):
 
     def forward(self, h_domains, mem):
 
-        h_master, alphas = self.attentionpool(h_domains)
+        if isinstance(mem, float):
+            #convert to tensor with batch as first dimension.
+            mem = torch.tensor([mem], dtype=torch.float32)
+            mem = mem.unsqueeze(0) #because batch dimension will always be 1
+
+        h_master, alphas = self.attentionpool(h_domains) #(batch, D) => h_master
         net_x = torch.cat([h_master, mem], dim=1)
         h = F.relu(self.shared_net(net_x))
 
@@ -101,7 +106,7 @@ class MasterAgent(nn.Module):
         #2. CALCULATING LOG PROBS
         alloc_log_prob = alloc_distn.log_prob(allocations)
         entropy = alloc_distn.entropy()
-        mem_update_logprob = mem_update_dist.logprob(mem_update).sum(-1)
+        mem_update_logprob = mem_update_dist.log_prob(mem_update).sum(-1)
 
         total_logprob = alloc_log_prob + mem_update_logprob
 
@@ -148,7 +153,7 @@ class MasterAgent(nn.Module):
         advantages = rollouts["advantages"].to(self.device)
         #returns and advantages calculated in train.py file in training loop
 
-        logprobs, entropy, values = self.evaluate(h_assets, master_alloc, domain_mem, actions)
+        logprobs, entropy, values = self.evaluate(h_domains, master_mem, actions)
         ratios = torch.exp(logprobs - old_logprobs)
 
         surr1 = ratios * advantages

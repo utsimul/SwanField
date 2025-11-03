@@ -29,8 +29,8 @@ class Asset_Seq_Encoder(nn.Module):
     
     def forward(self, seq_data : torch.Tensor):
 
-        _, (h_n, _) = self.network(seq_data)
-        return h_n[-1] #(last hidden state)
+        _, (h_n, _) = self.network(seq_data) #h_n = (L,B,N_r) or (no of recc layers, batch size, no of recc neurons)
+        return h_n[-1] #[-1] means we are taking the hidden state value of the last recurrent neuron. (L,B) #by default this is (1,B)
 
 
 class AssetPolicyNet(nn.Module):
@@ -47,7 +47,7 @@ class AssetPolicyNet(nn.Module):
             min_std : float = 1e-3, #Minimum standard deviation for the Normal distribution of the memory update.
             ):
         super().__init__()
-        self.encoder = Asset_Seq_Encoder(seq_input_dim, hidden_dim_seq)
+        self.encoder = Asset_Seq_Encoder(seq_input_dim, hidden_dim_seq) #returns (L,B) 
         self.shared_net = nn.Linear(hidden_dim_seq + non_seq_input_dim, hidden_dim)
         self.actor_bhs = nn.Linear(hidden_dim, num_discrete) #actor head 1: BUY HOLD SELL
 
@@ -69,16 +69,21 @@ class AssetPolicyNet(nn.Module):
 
     
     def forward(self, seq_data, non_seq_data):
-        seq_encoding = self.encoder(seq_data)
-        net_x = torch.cat([seq_encoding, non_seq_data], dim=1)
-        net_enc_hidden = torch.tanh(self.shared_net(net_x))
+
+        #seq_data is [1,T,F] and non_seq_data is [1, 2 values (alloc and mem)]
+
+        seq_encoding = self.encoder(seq_data) #returns as (L,B) 
+        #seq_encoding = seq_encoding.transpose(0,1) #convert that (L,B) to (B,L)
+        net_x = torch.cat([seq_encoding, non_seq_data], dim=1) #join along the dimension L or encoding cols. so batch is same and cols 
+        #of encoding and B put beside each other. => net becomes (B, L+2)
+        net_enc_hidden = torch.tanh(self.shared_net(net_x)) #hidden_dim neurons (by default 128)
 
         #BUY HOLD SELL (categorical policy):
-        logits = self.actor_bhs(net_enc_hidden)
+        logits = self.actor_bhs(net_enc_hidden) #(B,3) 3 for B,H,S
         bhs = Categorical(logits = logits)
 
         #ASSET TO DOMAIN SIGNAL
-        ast_to_dom_mean = self.asset_to_domain_mean(net_enc_hidden) #gives 2 (num_signal) means
+        ast_to_dom_mean = self.asset_to_domain_mean(net_enc_hidden) #gives 2 (num_signal) => (B,2)
         ast_do_dom_logstd = self.asset_to_domain_std(net_enc_hidden).clamp(min=torch.log(torch.tensor(self.min_std))) #gives 2 logstds
         ast_to_dom_std = ast_do_dom_logstd.exp() #calculate logstd to ensure that values are positive
         ast_to_dom = Normal(ast_to_dom_mean, ast_to_dom_std) #outputs a Gaussian distribution 
@@ -87,7 +92,7 @@ class AssetPolicyNet(nn.Module):
         #greedy percentages
 
         #MEMORY UPDATE SIGNAL
-        mem_mean = self.mem_update_mean(net_enc_hidden) #gives 2 means
+        mem_mean = self.mem_update_mean(net_enc_hidden) #gives 2 means => (B,2)
         mem_logstd = self.mem_update_std(net_enc_hidden).clamp(min=torch.log(torch.tensor(self.min_std))) #gives 2 log std
         mem_std = mem_logstd.exp() #calculate logstd to ensure that values are positive
         mem_update = Normal(mem_mean, mem_std)
@@ -146,15 +151,17 @@ class AssetAgent(nn.Module):
 
         #CONCAT MEMORY ONTO NON SEQ DATA - EITHER HERE OR IN TRAINING LOOP AND SEND
 
-        seq_data = seq_data.to(self.device)
+        #seq_data is [1,T,F] and non_seq_data is [1, 2 values (alloc and mem)]
+
+        seq_data = seq_data.to(self.device) 
         non_seq_data = non_seq_data.to(self.device)
         bhs_dist, ast_to_dom_dist, mem_update_dist, trade_frac_dist, value = self.policynet(seq_data, non_seq_data)
 
         #1. SAMPLING FROM DISTRIBUTIONS
         bhs = bhs_dist.sample()
-        ast_to_dom = ast_to_dom_dist.sample()
-        mem_update = mem_update_dist.sample()
-        trade_frac = trade_frac_dist.sample().clamp(0, 1)
+        ast_to_dom = ast_to_dom_dist.sample() 
+        mem_update = mem_update_dist.sample() 
+        trade_frac = trade_frac_dist.sample().clamp(0, 1) 
 
         #2. CALCULATING LOG PROBS 
         bhs_logprob = bhs_dist.log_prob(bhs) #need log probabilities for policy gradient calculation

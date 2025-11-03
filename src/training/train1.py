@@ -17,12 +17,12 @@ from ta.volatility import BollingerBands
 from ta.momentum import RSIIndicator
 
 # Import agents and preprocessing
-sys.path.append('src/agents')
-from asset_level_agent import AssetAgent, AssetRolloutBuffer
-from domain_level_agent import DomainAgent
-from master_agent import MasterAgent
-from helpernets import *
-from preprocessing import run  # import only run()
+# sys.path.append('src/agents')
+# from asset_level_agent import AssetAgent, AssetRolloutBuffer
+# from domain_level_agent import DomainAgent
+# from master_agent import MasterAgent
+# from helpernets import *
+# from preprocessing import run  # import only run()
 
 RED = '\033[91m'
 GREEN = '\033[92m'
@@ -126,10 +126,10 @@ def split(windows, split_ratio=0.8):
 window_size = 60
 all_windows, num_windows = make_windows(seq_data, window_size)
 train_data, test_data = split(all_windows, split_ratio=0.8)
-num_episodes = train_data.shape[0]
-
-print("Train data shape: " , train_data["AAPL"].shape)  #(no_of_windows, window_timesteps, columns)
-print("Test data shape: ", test_data["AAPL"].shape)   
+num_episodes = len(train_data["AAPL"].shape)
+print(BLUE, "Train data shape: " , train_data["AAPL"].shape, ENDC) #(no_of_windows, window_timesteps, columns)
+print(GREEN + "no of windows, window timesteps, columns" + ENDC) 
+print(BLUE, "Test data shape: ", test_data["AAPL"].shape, ENDC)   
 
 #----------------------------------------------------------------------------------------
 #DEFINING ARCHITECTURES
@@ -150,41 +150,62 @@ MasterAG = MasterAgent(num_domains=2, h_domain_dim=2)
 AssetBuffer = AssetRolloutBuffer()
 
 
-asset_mem_param = 0.1
-domain_mem_param = 0.1
-master_mem_param = 0.1
-gamma = 0.99
+# After creating agents: AssetAG, DomainAG, MasterAG
+device_asset = AssetAG.device
+device_domain = DomainAG.device
+device_master = MasterAG.device
 
-#define memories - assuming each memory contains 1 value (for now)
-master_mem = 0
-domain_mem = []
+# memory dims (your agents initialize memory_dim attribute)
+asset_memory_dim = 1
+domain_memory_dim = DomainAG.memory_dim if hasattr(DomainAG, "memory_dim") else 1
+master_memory_dim = MasterAG.memory_dim if hasattr(MasterAG, "memory_dim") else 1
+
+# master memory as tensor (batch dim 1)
+master_mem = torch.zeros(1, master_memory_dim, device=device_master, dtype=torch.float32)
+
+# domain memories: list of tensors shaped (1, memory_dim)
+domain_mem = [
+    torch.zeros(1, domain_memory_dim, device=device_domain, dtype=torch.float32)
+    for _ in range(num_domains)
+]
+
+# asset memories: list (per domain) of list (per asset) of tensors (1, memory_dim)
 asset_mems = []
-
-#set equal capital to all (initialization) - alt: can use init as per current price
-domain_allocs = [] #one alloc per asset
-asset_allocs = []
-
-#current holdings
-domain_cur_holdings = []
-asset_cur_holdings = []
-
-#filling values:
-
 for domain, assets in domain_wise_tickers.items():
-    domain_allocs.append(total_portfolio_value/num_domains)
-    domain_mem.append(0)
-    domain_cur_holdings.append(0)
-    asset_alloc = []
-    asset_mem = []
-    asset_holding = []
-    for asset in assets:
-        asset_alloc.append(domain_allocs[domain_indices[domain]]/len(assets))
-        asset_holding.append(0)
-        asset_mem.append(0)
-    asset_allocs.append(asset_alloc)
-    asset_cur_holdings.append(asset_holding)
-    asset_mems.append(asset_mem)
+    am = [torch.zeros(1, asset_memory_dim, device=device_asset, dtype=torch.float32) for _ in assets]
+    asset_mems.append(am)
 
+#ALLOCATIONS ARE IN THE FORM OF RATIOS: TRUE ALLOCATIONS = ALLOCATIONS * PORTFOLIO VALUE
+
+# domain_allocs: keep as list of 1-element tensors (shape (1,))
+domain_allocs = [
+    torch.tensor([1 / num_domains], dtype=torch.float32, device=device_domain)
+    for _ in range(num_domains)
+]
+#a tensor
+
+print(BLUE, "domain allocs shape: ", len(domain_allocs), " value: ", domain_allocs[0])
+
+# asset_allocs: per-domain list of per-asset 1-element tensors
+asset_allocs = []
+for domain_idx, (domain, assets) in enumerate(domain_wise_tickers.items()):
+    per_domain = [
+        torch.tensor([ (1 / num_domains) / len(assets) ], dtype=torch.float32, device=device_asset)
+        for _ in assets
+    ]
+    asset_allocs.append(per_domain)
+#an array of tensors
+
+print(BLUE, "asset allocs shape: ", len(asset_allocs), len(asset_allocs[0]), " value: ", domain_allocs[0], ENDC)
+
+# current holdings (keep as python numbers or tensors as you prefer)
+domain_cur_holdings = [0 for _ in range(num_domains)]
+asset_cur_holdings = [[0 for _ in assets] for assets in domain_wise_tickers.values()]
+
+
+asset_mem_param = 0.7
+domain_mem_param = 0.7
+master_mem_param = 0.7
 
 #----------------------------------------------------------------------------------------
 #RETURN ESTIMATIONS:
@@ -201,173 +222,154 @@ def compute_returns(rewards, gamma=0.99):
 #----------------------------------------------------------------------------------------
 #TRAINING
 
-for epoch in range(num_epochs):
+def train():
+    global domain_allocs, asset_allocs, domain_mem, master_mem
+    for epoch in range(num_epochs):
 
-    # PPO UPDATE OCCURS HERE 
-    asset_rollouts = []
-    domain_rollouts = []
-    master_rollouts = []
+        #batches- PPO UPDATE OCCURS HERE 
+        print(GREEN + f"starting epoch {epoch}..." + ENDC)
+        for start in range(0, num_windows, batch_size): #generating batches dynamically. 
 
-    #1 batch of 20 overlaps of t timesteps, thetas are fixed for 1 batch
-     #(no_of_windows, window_timesteps, columns)
-    episode_rewards = [] 
-    asset_buffer = {
-        "seq_data": [],       # list of tensors: [seq_len, features]
-        "non_seq_data": [],   # list of tensors: [non_seq_features]
-        "actions": [],        # list of tuples: (a1, a2, a3, a4)
-        "old_logprobs": [],   # list of tensors (scalar)
-        "values": [],         # list of tensors (scalar)
-        "rewards": []         # list of floats
-    }
+            end = start + batch_size
+            batch_idxs = range(start, min(end, num_windows))
 
-
-    domain_buffer = {
-        "h_assets" : [],
-        "domain_memory" : [],
-        "master_alloc" : [],
-        "actions:" : [],
-        "old_logprobs" : [],
-        "returns" : [],
-        "advantages" : []
-    }
-
-    master_buffer = {
-        "h_domains" : [],
-        "master_memory" : [],
-        "actions" : [],
-        "old_logprobs" : [],
-        "returns" : [],
-        "advantages" : []
-    }
-
-    for window in range(batch_size): #number of windows in a batch
-        batch_reward = [] #asset, domain, master
-        asset_to_domain_signals = [] #3D list
-        domain_to_master_signals = [] #2D list
-        master_returns = 0
-
-        for domain, assets in domain_wise_tickers.items():
-            domain_idx = domain_indices[domain]
-            asset_to_domain_sig_domain = []
-            domain_rewards = 0
-            for asset in assets:
-                r_t_domain = 0
-                #TRAIN ASSET LEVEL AGENT:
-                #train_data["asset"]["data"] -> (no_of_windows, window_timesteps, columns)
-                asset_idx = asset_indices[asset]
-                seq_tensor = torch.tensor(train_data[asset]["data"][window], dtype=torch.float32)
-                non_seq_tensor = torch.tensor([asset_allocs[domain_idx][asset_idx], asset_mems[domain_idx][asset_idx]],
-                            dtype=torch.float32)
-                seq_in = seq_tensor.unsqueeze(0).to(AssetAG.device)       # [1, T, F]
-                non_seq_in = non_seq_tensor.unsqueeze(0).to(AssetAG.device)             
-                (actions, total_logprob, value) = AssetAG.act(seq_data=seq_in, non_seq_data=non_seq_in)
-                # actions is tuple (bhs, ast_to_dom, mem_update, trade_frac)
-                # each entry is a tensor with batch dim -> squeeze the batch dim before storing
-
-                asset_buffer["seq_data"].append(seq_tensor)   # store without batch dim [T, F]
-                asset_buffer["non_seq_data"].append(non_seq_tensor)
-
-                #we're inside batch loop. Thus the outermost batch dimension is 1. Therefore we squeeze that dimension.
-                bhs = actions[0].squeeze(0).detach()        # bhs: categorical action (scalar tensor)
-                ast_to_dom = actions[1].squeeze(0).detach()        # ast_to_dom continuous vector tensor
-                mem_update = actions[2].squeeze(0).detach()        # mem_update
-                trade_frac = actions[3].squeeze(0).detach()        # trade_frac
+            batch_rewards = [] 
+            asset_buffer = {
+                "seq_data": [],       # list of tensors: [seq_len, features]
+                "non_seq_data": [],   # list of tensors: [non_seq_features]
+                "actions": [],        # list of tuples: (a1, a2, a3, a4)
+                "old_logprobs": [],   # list of tensors (scalar)
+                "values": [],         # list of tensors (scalar)
+                "rewards": []         # list of floats
+            }
 
 
-                #1. BUY HOLD SELL:
-                asset_cap = asset_allocs[domain_idx][asset_idx]
-                target_holding = trade_frac.item() * asset_cap
-                trade_amount = target_holding - asset_cur_holdings[domain_idx][asset_idx]
+            domain_buffer = {
+                "h_assets" : [],
+                "domain_memory" : [],
+                "master_alloc" : [],
+                "actions" : [],
+                "old_logprobs" : [],
+                "returns" : [],
+                "advantages" : []
+            }
+
+            master_buffer = {
+                "h_domains" : [],
+                "master_memory" : [],
+                "actions" : [],
+                "old_logprobs" : [],
+                "returns" : [],
+                "advantages" : []
+            }
+
+            for window_idx in batch_idxs:
+
+                asset_to_domain_signals = []  # [num_domains][num_assets][ast_to_dom_dim]
+                domain_to_master_signals = []  # [num_domains,batch, dtom_dim] 
+                master_returns = 0
+
+                for domain, assets in domain_wise_tickers.items():
+                    domain_idx = domain_indices[domain]
+                    asset_to_domain_sig_domain = []
+                    r_t_domain = 0.0
+
+                    for asset in assets:
+                        asset_idx = asset_indices[asset]
+
+                        seq_tensor = torch.tensor(train_data[asset][window_idx], dtype=torch.float32) #(window timesteps, columns)
+                        non_seq_tensor = torch.tensor([asset_allocs[domain_idx][asset_idx], asset_mems[domain_idx][asset_idx]], dtype=torch.float32)
+                        #1D tensor :- [asset_allocation value, asset memory value]
+
+                        seq_in = seq_tensor.unsqueeze(0).to(AssetAG.device)  # [1, T, F]
+                        #in PPO we are processing data in batches BUT we have to pass each batch instance one at a time, but since 
+                        #pytorch expects data as (batch, ...,...) we need to make faux batches.
+
+                        non_seq_in = non_seq_tensor.unsqueeze(0).to(AssetAG.device) #(1, 1D tensor)
+
+                        actions, total_logprob, value = AssetAG.act(seq_in, non_seq_in)
+                        bhs = actions[0].detach() 
+                        ast_to_dom = actions[1].detach() #detach completely removes the new tensor from the current computational graph 
+                        mem_update = actions[2].detach()
+                        trade_frac = actions[3].detach() #not adding squeeze(0) so the first dimension is still batch.
+
+                        # reward calc
+                        p_t = train_data[asset][window_idx, -1, 0]
+                        if window_idx < num_windows - 1:
+                            p_t_plus_1 = train_data[asset][window_idx + 1, -1, 0]
+                            frac = p_t_plus_1 / p_t
+                            w_asset = asset_allocs[domain_idx][asset_idx]
+                            r_t = w_asset * (frac - 1)
+                            r_t_domain += r_t
+
+                        asset_to_domain_sig_domain.append(ast_to_dom) #(assets, batch, ...) because the first dimension of every ast_to_dom
+                        #is batch and we are appending various ast_to_doms in the list above.
+                        asset_mems[domain_idx][asset_idx] += asset_mem_param * mem_update
+
+                        asset_buffer["seq_data"].append(seq_tensor) #seq_tensor has batch first
+                        asset_buffer["non_seq_data"].append(non_seq_tensor)
+                        asset_buffer["actions"].append((bhs.cpu(), ast_to_dom.cpu(), mem_update.cpu(), trade_frac.cpu()))
+                        asset_buffer["old_logprobs"].append(total_logprob.detach().cpu())
+                        asset_buffer["values"].append(value.detach().cpu().squeeze())
+                        asset_buffer["rewards"].append(r_t)
 
 
-                if trade_amount > 0 and bhs == 0: #buy signal
-                    buy_amount = min(trade_amount, total_portfolio_value)
-                    asset_cur_holdings[domain_idx][asset_idx] += buy_amount
+                    # if isinstance(asset_to_domain_sig_domain, list):
+                    #     if isinstance(asset_to_domain_sig_domain[0], torch.Tensor):
+                    #         asset_to_domain_sig_domain = torch.stack(asset_to_domain_sig_domain)
+                    #         #joins all the elements of the array along dimension 0 (stack) => batch stack
+                    #     else:
+                    #         asset_to_domain_sig_domain = torch.tensor(asset_to_domain_sig_domain, dtype=torch.float32)
 
-                elif trade_amount < 0 and bhs == 2: #sell signal
-                    sell_amount = -1 * trade_amount
-                    asset_cur_holdings[domain_idx][asset_idx] -= sell_amount
+                    #i am skipping this block because i want to keep everything batch first to ensure uniformity
+
+                    asset_to_domain_sig_domain = (
+                        torch.stack(asset_to_domain_sig_domain)    # (num_assets, batch, dim)
+                        .permute(1, 0, 2)                          # → (batch, num_assets, dim)
+                        .to(DomainAG.device)
+                    )
+
+                    # domain-level update
+                    domain_buffer["h_assets"].append(asset_to_domain_sig_domain)
+                    domain_buffer["domain_memory"].append(domain_mem[domain_idx])
+                    domain_buffer["master_alloc"].append(domain_allocs[domain_idx])
+
+                    actions, total_logprob, value, alloc_distn = DomainAG.act(asset_to_domain_sig_domain, domain_allocs[domain_idx], domain_mem[domain_idx])
+                    allocations = actions[0].detach() #I AM REMOVING BATCH dimension FROM ALLOCATIONS 
+                    dtom = actions[1].detach()
+                    mem_update = actions[2].detach()
+
+                    asset_allocs[domain_idx] = allocations
+                    domain_mem[domain_idx] += domain_mem_param * mem_update
+
+                    domain_to_master_signals.append(dtom)
+                    domain_buffer["actions"].append(actions)
+                    domain_buffer["old_logprobs"].append(total_logprob)
+                    domain_buffer["returns"].append(r_t_domain)
+                    master_returns += domain_allocs[domain_idx] * r_t_domain
+
+                # master
+                domain_to_master_signals = (
+                        torch.stack(domain_to_master_signals)    # [num_domains,batch, dtom_dim] 
+                        .permute(1, 0, 2)                          # → (batch, num_domains, dtom_dim)
+                        .to(MasterAG.device)
+                )
                 
-                else:
-                    #hold - do nothing
-                    pass
-            
-                #calculate returns:
-                p_t = train_data[window][0][-1]
-                if(window != batch_size-1):
-                    p_t_plus_1 = train_data[window][0][-1] #close price of the next immediate timestep
-                    frac = p_t_plus_1/p_t
-                    w_asset = asset_allocs[domain_idx][asset_idx] #weight
-                    r_t = w_asset * (frac - 1)
-                    r_t_domain += r_t
-                
-                #pass to domain
-                asset_to_domain_sig_domain.append(ast_to_dom)
-                asset_to_domain_signals.append(asset_to_domain_sig_domain)
-                #memory update
-                asset_mems[domain_idx][asset_idx] += asset_mem_param * mem_update
+                master_buffer["h_domains"] = domain_to_master_signals
+                master_buffer["master_memory"] = master_mem
+
+                master_actions, total_logprob, value, alloc_distn = MasterAG.act(domain_to_master_signals, master_mem)
+                allocations = master_actions[0].squeeze(0).detach()       #I AM REMOVING BATCH dimension FROM ALLOCATIONS
+                mem_update = master_actions[1].detach()
+
+                master_buffer["actions"] = master_actions
+                master_buffer["old_logprobs"] = total_logprob
+                master_buffer["returns"] = master_returns
+
+                domain_allocs = allocations
+                master_mem += master_mem_param * mem_update
 
             
-                asset_buffer["actions"].append((bhs.cpu(), ast_to_dom.cpu(), mem_update.cpu(), trade_frac.cpu()))
-                asset_buffer["old_logprobs"].append(total_logprob.detach().cpu())
-                asset_buffer["values"].append(value.detach().cpu().squeeze())  # scalar
-                asset_buffer["rewards"].append(r_t)   # float
-
-            #once the asset level processing is done, we move to their domain
-            domain_buffer["h_assets"].append(asset_to_domain_signals)
-            domain_buffer["domain_memory"].append(domain_mem[domain_idx])
-            domain_buffer["master_alloc"].append(domain_allocs[domain_idx])
-
-            actions, total_logprob, value, alloc_distn = DomainAG.act(asset_to_domain_signals[domain_idx])
-            allocations = ast_to_dom = actions[0].squeeze(0).detach()
-            dtom = actions[1].squeeze(0).detach()
-            mem_update = actions[2].squeeze(0).detach()
-
-            #set allocations:
-            asset_allocs[domain_idx] = allocations
-
-            #update in domain to master
-            domain_to_master_signals.append(dtom)
-
-            #memory update
-            domain_mem[domain_idx] += domain_mem_param * mem_update
-
-            domain_buffer["actions"].append(actions)
-            domain_buffer["old_logprobs"].append(total_logprob)
-            
-            #calculate domain returns:
-            #(later: modify returns to reward profits scored during high volatility)
-            domain_buffer["returns"].append(r_t_domain)
-            master_returns += domain_allocs[domain_idx] * r_t_domain
-        
-        #master
-        master_buffer["h_domains"] = domain_to_master_signals
-        master_buffer["master_memory"] = master_mem
-
-        master_actions, total_logprob, value, alloc_distn = MasterAG.act(domain_to_master_signals, master_mem)
-        allocations = master_actions[0].squeeze(0).detach()
-        mem_update = master_actions[0].squeeze(0).detach()
-
-        master_buffer["actions"] = master_actions
-        master_buffer["old_logprobs"] = total_logprob
-        master_buffer["returns"] = master_returns
-        
-        #update domain allocations:
-        domain_allocs = allocations
-
-        #memory update
-        master_mem += master_mem_param * mem_update
-
-        
-        
-    #All windows in that batch completed -> so now we update
-    #ASSET BUFFER DIMENSIONS: keys - values are flat buffers -> asset1, asset 2,... for a domain, asset3, asset 4, ... for domain2 ... for all domains, asset 1, asset 2,... for a domain (next window),... for all windows
-    #basically the flatenned version of (windows, domains, assets)
-    #DOMAIN BUFFER DIMENSIONS: keys - for every key there is a list (batch_size, num_assets) for h_assets or (batch_size)
-    #MASTER BUFFER DIMENSION: straightforward - keys: values are list of number of windows in that batch 
-
-    AssetAG.update_policy(asset_buffer)
-    DomainAG.update_policy(domain_buffer)
-    MasterAG.update_policy(master_buffer)
-
-
+            AssetAG.update_policy(asset_buffer)
+            DomainAG.update_policy(domain_buffer)
+            MasterAG.update_policy(master_buffer)

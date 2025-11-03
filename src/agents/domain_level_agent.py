@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Categorical, Normal
-from helpernets import attention_pool
+#from helpernets import attention_pool
 
 class DomainPolicyNet(nn.Module):
 
@@ -35,12 +35,24 @@ class DomainPolicyNet(nn.Module):
 
     def forward(self, h_assets, master_signal, mem):
 
-        h_sector, alphas = self.attentionpool(h_assets)
-        if mem.dim() == 1:
-            mem = mem.unsqueeze(0)
-        if mem.size(0) != h_assets.size(0):
-            mem = mem.expand(h_assets.size(0), -1)
-        net_x = torch.cat([h_sector, master_signal, mem], dim=1)
+        h_sector, alphas = self.attentionpool(h_assets) #(batch, D) => h_sector
+        print(YELLOW + "attention pool done" + ENDC)
+        # if mem.dim() == 1:
+        #     mem = mem.unsqueeze(0)
+        # if mem.size(0) != h_assets.size(0):
+        #     mem = mem.expand(h_assets.size(0), -1)
+
+        if isinstance(mem, float):
+            #convert to tensor with batch as first dimension.
+            mem = torch.tensor([mem], dtype=torch.float32)
+            mem = mem.unsqueeze(0) #because batch dimension will always be 1
+        
+        master_signal = master_signal.unsqueeze(0) #because it has to have 2 dims (batch, its own)
+    
+        print(BLUE, "h_sector", h_sector, ENDC)
+        print(BLUE, "master_signal", master_signal, ENDC)
+        print(BLUE, "mem", mem, ENDC)
+        net_x = torch.cat([h_sector, master_signal, mem], dim=1) #all the dims other than index 1 should be same. 
         h = F.relu(self.shared_net(net_x))
 
         #ASSET ALLOCATION (USE DIRICHLET DISTRIBUTION):
@@ -109,7 +121,7 @@ class DomainAgent(nn.Module):
 
     def act(self, h_assets, master_signal, mem):
 
-        h_assets = h_assets.to(self.device)
+        h_assets = h_assets.to(self.device) #(batch, num_assets, dim)
         master_signal = master_signal.to(self.device)
         alloc_distn, mem_update_dist, dtom_dist, value = self.policynet(h_assets, master_signal, mem)
 
