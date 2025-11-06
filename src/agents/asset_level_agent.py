@@ -70,7 +70,7 @@ class AssetPolicyNet(nn.Module):
     
     def forward(self, seq_data, non_seq_data):
 
-        #seq_data is [1,T,F] and non_seq_data is [1, 2 values (alloc and mem)]
+        #seq_data is [B,T,F] and non_seq_data is [B, 2 values (alloc and mem)]
 
         seq_encoding = self.encoder(seq_data) #returns as (L,B) 
         #seq_encoding = seq_encoding.transpose(0,1) #convert that (L,B) to (B,L)

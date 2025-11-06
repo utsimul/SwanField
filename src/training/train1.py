@@ -29,6 +29,11 @@ GREEN = '\033[92m'
 YELLOW = '\033[93m'
 BLUE = '\033[94m'
 ENDC = '\033[0m'
+BRIGHT_MAGENTA = '\033[95m'
+CYAN = '\033[96m'
+WHITE = '\033[97m'
+STD_BLUE = '\033[34m'
+MAGENTA = '\033[35m'
 
 #----------------------------------------------------------------------------------------
 #VARIABLES
@@ -278,16 +283,37 @@ def train():
                         asset_idx = asset_indices[asset]
 
                         seq_tensor = torch.tensor(train_data[asset][window_idx], dtype=torch.float32) #(window timesteps, columns)
-                        non_seq_tensor = torch.tensor([asset_allocs[domain_idx][asset_idx], asset_mems[domain_idx][asset_idx]], dtype=torch.float32)
+                        #non_seq_tensor = torch.tensor([asset_allocs[domain_idx][asset_idx], asset_mems[domain_idx][asset_idx]], dtype=torch.float32)
+
+                        print(BLUE + "asset allocs: " , asset_allocs[domain_idx][asset_idx] , ENDC)
+                        print(BLUE + "asset mems: " , asset_mems[domain_idx][asset_idx] , ENDC)
+
+                        alloc_val = asset_allocs[domain_idx][asset_idx]  # shape (batch,)
+                        mem_val = asset_mems[domain_idx][asset_idx]      # shape (batch, 1)
+
+                        if alloc_val.ndim == 1:
+                            alloc_val = alloc_val.unsqueeze(-1)  # (batch, 1)
+                        
+                        if alloc_val.ndim == 0:
+                            alloc_val = alloc_val.unsqueeze(0) .unsqueeze(0) # (batch, 1)
+
+                        print(BLUE + "val allocs: " , alloc_val , ENDC)
+                        print(BLUE + "val mems: " , mem_val , ENDC)
+
+                        non_seq_tensor = torch.cat([alloc_val, mem_val], dim=-1)  # (batch, 2)
+
                         #1D tensor :- [asset_allocation value, asset memory value]
 
                         seq_in = seq_tensor.unsqueeze(0).to(AssetAG.device)  # [1, T, F]
                         #in PPO we are processing data in batches BUT we have to pass each batch instance one at a time, but since 
                         #pytorch expects data as (batch, ...,...) we need to make faux batches.
 
-                        non_seq_in = non_seq_tensor.unsqueeze(0).to(AssetAG.device) #(1, 1D tensor)
+                        non_seq_in = non_seq_tensor.to(AssetAG.device) #non_seq_tensor.unsqueeze(0).to(AssetAG.device) #(1, 1D tensor)
 
-                        actions, total_logprob, value = AssetAG.act(seq_in, non_seq_in)
+                        print(RED, "seq_in shape: ", seq_in.shape, " non_seq_in shape: ", non_seq_in.shape, ENDC)
+                        
+
+                        actions, total_logprob, value = AssetAG.act(seq_in, non_seq_in) #put in the form of batch first
                         bhs = actions[0].detach() 
                         ast_to_dom = actions[1].detach() #detach completely removes the new tensor from the current computational graph 
                         mem_update = actions[2].detach()
@@ -312,7 +338,7 @@ def train():
                         asset_buffer["old_logprobs"].append(total_logprob.detach().cpu())
                         asset_buffer["values"].append(value.detach().cpu().squeeze())
                         asset_buffer["rewards"].append(r_t)
-
+                        print(CYAN + "Asset done" + ENDC)
 
                     # if isinstance(asset_to_domain_sig_domain, list):
                     #     if isinstance(asset_to_domain_sig_domain[0], torch.Tensor):
@@ -336,10 +362,11 @@ def train():
 
                     actions, total_logprob, value, alloc_distn = DomainAG.act(asset_to_domain_sig_domain, domain_allocs[domain_idx], domain_mem[domain_idx])
                     allocations = actions[0].detach() #I AM REMOVING BATCH dimension FROM ALLOCATIONS 
+                    print(GREEN , "all allocations (domain output)" , allocations, ENDC)
                     dtom = actions[1].detach()
                     mem_update = actions[2].detach()
 
-                    asset_allocs[domain_idx] = allocations
+                    asset_allocs[domain_idx] = allocations.squeeze(0)  #remove batch dim
                     domain_mem[domain_idx] += domain_mem_param * mem_update
 
                     domain_to_master_signals.append(dtom)
@@ -347,6 +374,7 @@ def train():
                     domain_buffer["old_logprobs"].append(total_logprob)
                     domain_buffer["returns"].append(r_t_domain)
                     master_returns += domain_allocs[domain_idx] * r_t_domain
+                    print(MAGENTA + "domain done" + ENDC)
 
                 # master
                 domain_to_master_signals = (
@@ -359,17 +387,20 @@ def train():
                 master_buffer["master_memory"] = master_mem
 
                 master_actions, total_logprob, value, alloc_distn = MasterAG.act(domain_to_master_signals, master_mem)
-                allocations = master_actions[0].squeeze(0).detach()       #I AM REMOVING BATCH dimension FROM ALLOCATIONS
+                allocations = master_actions[0].detach()       #I AM REMOVING BATCH dimension FROM ALLOCATIONS
                 mem_update = master_actions[1].detach()
 
                 master_buffer["actions"] = master_actions
                 master_buffer["old_logprobs"] = total_logprob
                 master_buffer["returns"] = master_returns
 
-                domain_allocs = allocations
+                domain_allocs = allocations.squeeze(0)  #remove batch dim
                 master_mem += master_mem_param * mem_update
+                print(WHITE + "one asset-domain-master cycle (window) done" + ENDC)
 
-            
+
+            print(BRIGHT_MAGENTA + "upadating all agents" + ENDC)
             AssetAG.update_policy(asset_buffer)
             DomainAG.update_policy(domain_buffer)
             MasterAG.update_policy(master_buffer)
+            print(BRIGHT_MAGENTA + "updates done!" + ENDC)

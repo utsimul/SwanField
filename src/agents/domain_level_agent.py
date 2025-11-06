@@ -35,6 +35,10 @@ class DomainPolicyNet(nn.Module):
 
     def forward(self, h_assets, master_signal, mem):
 
+        print(MAGENTA + "master signal: ", master_signal, ENDC)
+        if master_signal.ndim == 0:
+            master_signal = master_signal.unsqueeze(0) # (batch, 1)
+        print(MAGENTA + "h_assets: " , h_assets , ENDC)
         h_sector, alphas = self.attentionpool(h_assets) #(batch, D) => h_sector
         print(YELLOW + "attention pool done" + ENDC)
         # if mem.dim() == 1:
