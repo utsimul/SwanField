@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Categorical, Normal
+#from helpernets import ensure_tensor
 
 #Dont forget:
 # - CONCAT MEMORY ONTO NON SEQ DATA either in train.py or here
@@ -175,7 +176,7 @@ class AssetAgent(nn.Module):
 
         return (bhs, ast_to_dom, mem_update, trade_frac), total_logprob, value
     
-    def evaluate(self, seq_data, non_seq_data, actions):
+    def evaluate(self, seq_data, non_seq_data, a1,a2,a3,a4):
         """Recompute logprobs + entropy + value for PPO update."""
 
         #CONCAT MEMORY ONTO NON SEQ DATA - EITHER HERE OR IN TRAINING LOOP AND SEND
@@ -185,7 +186,6 @@ class AssetAgent(nn.Module):
 
         bhs_dist, atod_dist, mem_dist, trade_frac_dist, value = self.policynet(seq_data, non_seq_data)
 
-        a1, a2, a3, a4 = actions
         bhs_p = bhs_dist.log_prob(a1)
         atod_p = atod_dist.log_prob(a2).sum(-1)
         mem_upd_p = mem_dist.log_prob(a3).sum(-1)
@@ -210,15 +210,19 @@ class AssetAgent(nn.Module):
         had freezed policy updation. Now we review our calculations.
         """
 
+
         seq_data = rollouts["seq_data"].to(self.device)
         non_seq_data = rollouts["non_seq_data"].to(self.device)
-        actions = rollouts["actions"]
+        bhs = rollouts["bhs"]
+        ast_to_dom = rollouts["ast_to_dom"]
+        mem_update = rollouts["mem_update"]
+        trade_frac = rollouts["trade_frac"]
         old_logprobs = rollouts["old_logprobs"].to(self.device)
-        returns = rollouts["returns"].to(self.device)
-        advantages = rollouts["advantages"].to(self.device)
+        returns = rollouts["rewards"].to(self.device)
+        advantages = rollouts["values"].to(self.device)
         #returns and advantages calculated in train.py file in training loop
 
-        logprobs, entropy, values = self.evaluate(seq_data, non_seq_data, actions)
+        logprobs, entropy, values = self.evaluate(seq_data, non_seq_data, bhs, ast_to_dom, mem_update, trade_frac)
         #multiple rows (mini batches) can be evaluated by pytorch just as well as a single row.
 
         ratios = torch.exp(logprobs - old_logprobs)

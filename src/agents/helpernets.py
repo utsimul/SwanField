@@ -29,3 +29,9 @@ class attention_pool(nn.Module):
         print(GREEN + "h_out from attention pool is: ", h_out)
 
         return h_out, alphas
+    
+def ensure_tensor(x, device, dtype=torch.float32):
+    if torch.is_tensor(x):
+        return x.to(device, dtype=dtype)
+    else:
+        return torch.tensor(x, dtype=dtype, device=device)

@@ -112,13 +112,12 @@ class MasterAgent(nn.Module):
 
         return (allocations, mem_update), total_logprob, value, alloc_distn
     
-    def evaluate(self, h_domains, mem, actions):
+    def evaluate(self, h_domains, master_memory, alloc, mem):
 
         h_domains = h_domains.to(self.device)
 
-        alloc_distn, mem_update_dist, value = self.policynet(h_domains,mem)
+        alloc_distn, mem_update_dist, value = self.policynet(h_domains,master_memory)
 
-        alloc, mem = actions
         alloc_p = alloc_distn.log_prob(alloc)
         mem_upd_p = mem_update_dist.log_prob(mem).sum(-1)
 
@@ -147,13 +146,14 @@ class MasterAgent(nn.Module):
         
         h_domains = rollouts["h_domains"].to(self.device)
         master_mem = rollouts["master_memory"].to(self.device)
-        actions = rollouts["actions"]
+        allocations = rollouts["allocations"].to(self.device)
+        mem_update = rollouts["mem_update"].to(self.device)
         old_logprobs = rollouts["old_logprobs"].to(self.device)
         returns = rollouts["returns"].to(self.device)
         advantages = rollouts["advantages"].to(self.device)
         #returns and advantages calculated in train.py file in training loop
 
-        logprobs, entropy, values = self.evaluate(h_domains, master_mem, actions)
+        logprobs, entropy, values = self.evaluate(h_domains, master_mem, allocations, mem_update)
         ratios = torch.exp(logprobs - old_logprobs)
 
         surr1 = ratios * advantages

@@ -36,11 +36,10 @@ class DomainPolicyNet(nn.Module):
     def forward(self, h_assets, master_signal, mem):
 
         print(MAGENTA + "master signal: ", master_signal, ENDC)
-        if master_signal.ndim == 0:
-            master_signal = master_signal.unsqueeze(0) # (batch, 1)
+        
         print(MAGENTA + "h_assets: " , h_assets , ENDC)
         h_sector, alphas = self.attentionpool(h_assets) #(batch, D) => h_sector
-        print(YELLOW + "attention pool done" + ENDC)
+        print(YELLOW + "attention pool done (domain agent)" + ENDC)
         # if mem.dim() == 1:
         #     mem = mem.unsqueeze(0)
         # if mem.size(0) != h_assets.size(0):
@@ -51,7 +50,6 @@ class DomainPolicyNet(nn.Module):
             mem = torch.tensor([mem], dtype=torch.float32)
             mem = mem.unsqueeze(0) #because batch dimension will always be 1
         
-        master_signal = master_signal.unsqueeze(0) #because it has to have 2 dims (batch, its own)
     
         print(BLUE, "h_sector", h_sector, ENDC)
         print(BLUE, "master_signal", master_signal, ENDC)
@@ -145,18 +143,17 @@ class DomainAgent(nn.Module):
 
         return (allocations, dtom, mem_update), total_logprob, value, alloc_distn
 
-    def evaluate(self, h_assets, master_signal, mem, actions):
+    def evaluate(self, h_assets, domain_memory, master_signal,alloc, dtom, mem_update):
 
         #recompute values
 
         h_assets = h_assets.to(self.device)
         master_signal = master_signal.to(self.device)
-        alloc_distn, mem_update_dist, dtom_dist, value = self.policynet(h_assets, master_signal, mem)
+        alloc_distn, mem_update_dist, dtom_dist, value = self.policynet(h_assets, master_signal, domain_memory)
 
-        alloc, dtom, mem = actions
         alloc_p = alloc_distn.log_prob(alloc)
         dtom_p = dtom_dist.log_prob(dtom).sum(-1)
-        mem_upd_p = mem_update_dist.log_prob(mem).sum(-1)
+        mem_upd_p = mem_update_dist.log_prob(mem_update).sum(-1)
 
         logprob = alloc_p + dtom_p + mem_upd_p
 
@@ -186,13 +183,15 @@ class DomainAgent(nn.Module):
         h_assets = rollouts["h_assets"].to(self.device)
         domain_mem = rollouts["domain_memory"].to(self.device)
         master_alloc = rollouts["master_alloc"].to(self.device)
-        actions = rollouts["actions"]
+        alloc = rollouts["allocations"].to(self.device)
+        dtom = rollouts["dtom"].to(self.device)
+        mem = rollouts["mem_update"].to(self.device)
         old_logprobs = rollouts["old_logprobs"].to(self.device)
         returns = rollouts["returns"].to(self.device)
         advantages = rollouts["advantages"].to(self.device)
         #returns and advantages calculated in train.py file in training loop
 
-        logprobs, entropy, values = self.evaluate(h_assets, master_alloc, domain_mem, actions)
+        logprobs, entropy, values = self.evaluate(h_assets, domain_mem, master_alloc, alloc, dtom, mem)
         ratios = torch.exp(logprobs - old_logprobs)
 
         surr1 = ratios * advantages
