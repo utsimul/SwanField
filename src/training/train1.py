@@ -230,6 +230,8 @@ def compute_returns(rewards, gamma=0.99):
 #----------------------------------------------------------------------------------------
 #TRAINING
 
+net_training_returns = [ [ 0 for asset in range(num_assets)] for domain in range(num_domains) ]  
+
 def train():
     global domain_allocs, asset_allocs, domain_mem, master_mem
     for epoch in range(num_epochs):
@@ -338,9 +340,21 @@ def train():
                             if window_idx < num_windows - 1:
                                 p_t_plus_1 = train_data[asset][window_idx][0][0]
                                 frac = p_t_plus_1 / p_t
-                                w_asset = asset_allocs[domain_idx][asset_idx]
+
+                                bhs_signal = bhs[0] #batch first
+                                if bhs_signal == 1:
+                                    #buy
+                                    w_asset = asset_allocs[domain_idx][asset_idx]
+                                    r_t = w_asset * (frac - 1) #we bought, so reward is added. 
                                 # print(YELLOW + f"Asset: {asset}, p_t: {p_t}, p_t+1: {p_t_plus_1}, frac: {frac}, w_asset: {w_asset}" + ENDC)
-                                r_t = w_asset * (frac - 1)
+                                elif bhs_signal == 1:
+                                    #hold
+                                    r_t = 0.0
+                                else:
+                                    #sell
+                                    w_asset = asset_allocs[domain_idx][asset_idx]
+                                    r_t = w_asset * -1 * (frac - 1) #we bought, so reward is subtracted (into -1).
+                                net_training_returns[domain_idx][asset_idx] += r_t
                                 r_t_domain += r_t
 
                             asset_to_domain_sig_domain.append(ast_to_dom) #(assets, batch, ...) because the first dimension of every ast_to_dom
