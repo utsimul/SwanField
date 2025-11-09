@@ -192,24 +192,25 @@ class DomainAgent(nn.Module):
         #returns and advantages calculated in train.py file in training loop
 
         logprobs, entropy, values = self.evaluate(h_assets, domain_mem, master_alloc, alloc, dtom, mem)
-        ratios = torch.exp(logprobs - old_logprobs)
-
-        surr1 = ratios * advantages
+        ratios = torch.exp(logprobs - old_logprobs) #old logprobs are summed up so that new logprobs and old logprobs both are batch first and have same batch value
+        
+        surr1 = ratios * advantages 
         surr2 = torch.clamp(ratios, 1 - self.clip_eps, 1 + self.clip_eps) * advantages
         actor_loss = -torch.min(surr1, surr2).mean()
 
-        value_loss = (returns - values).pow(2).mean()
+        value_loss = (returns - values).pow(2).mean() #returns and values are also batch first, deliberately made returns batch wise in buffer addition using unsqueeze(0)
         loss = actor_loss + self.c1 * value_loss - self.c2* entropy
 
         #magic statements
         self.optimizer.zero_grad()
+        loss = loss.mean() #taking mean across the entire batch
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.policynet.parameters(), max_norm=0.5)
         self.optimizer.step()
 
         return {
             "loss": loss.item(),
-            "actor_loss": actor_loss.item(),
-            "value_loss": value_loss.item(),
-            "entropy": entropy.item()
+            "actor_loss": actor_loss.mean().item(),
+            "value_loss": value_loss.mean().item(),
+            "entropy": entropy.mean().item()
         }

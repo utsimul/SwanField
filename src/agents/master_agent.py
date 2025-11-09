@@ -165,6 +165,7 @@ class MasterAgent(nn.Module):
 
         #magic statements
         self.optimizer.zero_grad()
+        loss = loss.mean() #taking mean across the entire batch
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.policynet.parameters(), max_norm=0.5)
 
@@ -172,7 +173,7 @@ class MasterAgent(nn.Module):
 
         return {
             "loss": loss.item(),
-            "actor_loss": actor_loss.item(),
-            "value_loss": value_loss.item(),
-            "entropy": entropy.item()
+            "actor_loss": actor_loss.mean().item(),
+            "value_loss": value_loss.mean().item(),
+            "entropy": entropy.mean().item()
         }
