@@ -324,53 +324,59 @@ def train():
                         
 
                         actions, total_logprob, value = AssetAG.act(seq_in, non_seq_in) #put in the form of batch first
+
                         bhs = actions[0].detach() 
                         ast_to_dom = actions[1].detach() #detach completely removes the new tensor from the current computational graph 
                         mem_update = actions[2].detach()
                         trade_frac = actions[3].detach() #not adding squeeze(0) so the first dimension is still batch.
 
-                        # reward calc
-                        p_t = train_data[asset][window_idx+1][0][0] #close price of first timestep of next window
-                        if window_idx < num_windows - 1:
-                            p_t_plus_1 = train_data[asset][window_idx][0][0]
-                            frac = p_t_plus_1 / p_t
-                            w_asset = asset_allocs[domain_idx][asset_idx]
-                            # print(YELLOW + f"Asset: {asset}, p_t: {p_t}, p_t+1: {p_t_plus_1}, frac: {frac}, w_asset: {w_asset}" + ENDC)
-                            r_t = w_asset * (frac - 1)
-                            r_t_domain += r_t
+                        with torch.no_grad():
+                            
 
-                        asset_to_domain_sig_domain.append(ast_to_dom) #(assets, batch, ...) because the first dimension of every ast_to_dom
-                        #is batch and we are appending various ast_to_doms in the list above.
-                        asset_mems[domain_idx][asset_idx] += asset_mem_param * mem_update
+                            # reward calc
+                            p_t = train_data[asset][window_idx+1][0][0] #close price of first timestep of next window
+                            if window_idx < num_windows - 1:
+                                p_t_plus_1 = train_data[asset][window_idx][0][0]
+                                frac = p_t_plus_1 / p_t
+                                w_asset = asset_allocs[domain_idx][asset_idx]
+                                # print(YELLOW + f"Asset: {asset}, p_t: {p_t}, p_t+1: {p_t_plus_1}, frac: {frac}, w_asset: {w_asset}" + ENDC)
+                                r_t = w_asset * (frac - 1)
+                                r_t_domain += r_t
+
+                            asset_to_domain_sig_domain.append(ast_to_dom) #(assets, batch, ...) because the first dimension of every ast_to_dom
+                    #is batch and we are appending various ast_to_doms in the list above.
+                            asset_mems[domain_idx][asset_idx] += asset_mem_param * mem_update
 
                         #I JUST NEED TO STORE IN ROLLOUTS IN THE SAME FORMAT AS I HAD PASSED INTO ACT() BECAUSE THE UPDATE POLICY ONLY 
                         #RECREATES THE SCENARIO
 
                         if(len(asset_buffer)==0):
                             # print(CYAN + "First value in rollouts being stored" + ENDC)
-                            asset_buffer["seq_data"] = seq_in
-                            asset_buffer["non_seq_data"] = non_seq_in
-                            asset_buffer["bhs"] = bhs
-                            asset_buffer["ast_to_dom"] = ast_to_dom
-                            asset_buffer["mem_update"] = mem_update
-                            asset_buffer["trade_frac"] = trade_frac
-                            asset_buffer["old_logprobs"] = total_logprob
-                            asset_buffer["values"] = value
+                            asset_buffer["seq_data"] = seq_in.clone()
+                            asset_buffer["non_seq_data"] = non_seq_in.clone()
+                            asset_buffer["bhs"] = bhs.clone()
+                            asset_buffer["ast_to_dom"] = ast_to_dom.clone()
+                            asset_buffer["mem_update"] = mem_update.clone()
+                            asset_buffer["trade_frac"] = trade_frac.clone()
+                            asset_buffer["old_logprobs"] = total_logprob.clone()
+                            asset_buffer["values"] = value.clone()
                             # print(CYAN + "r_t: ", r_t.unsqueeze(0), ENDC)
-                            asset_buffer["rewards"] = r_t.unsqueeze(0) #need to put this in a batch first format maybe
+                            asset_buffer["rewards"] = r_t.clone().unsqueeze(0) #need to put this in a batch first format maybe
                             # print(CYAN + "First asset done" + ENDC)
                         else:
-                            asset_buffer["seq_data"] = torch.cat([asset_buffer["seq_data"], seq_in], dim=0) #seq_tensor has batch first (batch, window timesteps, columns)
+                            print(RED, "asset buffer before: ", asset_buffer["seq_data"].shape, ENDC)
+                            asset_buffer["seq_data"] = torch.cat([asset_buffer["seq_data"], seq_in.clone()], dim=0) #seq_tensor has batch first (batch, window timesteps, columns)
                             # print(CYAN + "seq_in shape stored: ", seq_in, ENDC)
-                            asset_buffer["non_seq_data"] = torch.cat([asset_buffer["non_seq_data"], non_seq_in], dim=0)
-                            asset_buffer["bhs"] = torch.cat([asset_buffer["bhs"], bhs], dim=0)
-                            asset_buffer["ast_to_dom"] = torch.cat([asset_buffer["ast_to_dom"], ast_to_dom], dim=0)
-                            asset_buffer["mem_update"] = torch.cat([asset_buffer["mem_update"], mem_update], dim=0)
-                            asset_buffer["trade_frac"] = torch.cat([asset_buffer["trade_frac"], trade_frac], dim=0)
-                            asset_buffer["old_logprobs"] = torch.cat([asset_buffer["old_logprobs"], total_logprob], dim=0)
-                            asset_buffer["values"] = torch.cat([asset_buffer["values"], value], dim=0)
+                            print(RED, "asset buffer after: ", asset_buffer["seq_data"].shape, ENDC)
+                            asset_buffer["non_seq_data"] = torch.cat([asset_buffer["non_seq_data"], non_seq_in.clone()], dim=0)
+                            asset_buffer["bhs"] = torch.cat([asset_buffer["bhs"], bhs.clone()], dim=0)
+                            asset_buffer["ast_to_dom"] = torch.cat([asset_buffer["ast_to_dom"], ast_to_dom.clone()], dim=0)
+                            asset_buffer["mem_update"] = torch.cat([asset_buffer["mem_update"], mem_update.clone()], dim=0)
+                            asset_buffer["trade_frac"] = torch.cat([asset_buffer["trade_frac"], trade_frac.clone()], dim=0)
+                            asset_buffer["old_logprobs"] = torch.cat([asset_buffer["old_logprobs"], total_logprob.clone()], dim=0)
+                            asset_buffer["values"] = torch.cat([asset_buffer["values"], value.clone()], dim=0)
                             # print(CYAN + "r_t: ", r_t.unsqueeze(0), ENDC)
-                            asset_buffer["rewards"] = torch.cat([asset_buffer["rewards"], r_t.unsqueeze(0)], dim=0) #need to put this in a batch first format maybe
+                            asset_buffer["rewards"] = torch.cat([asset_buffer["rewards"], r_t.clone().unsqueeze(0)], dim=0) #need to put this in a batch first format maybe
                             # print(CYAN + "Asset done" + ENDC)
 
                     # if isinstance(asset_to_domain_sig_domain, list):
@@ -381,12 +387,26 @@ def train():
                     #         asset_to_domain_sig_domain = torch.tensor(asset_to_domain_sig_domain, dtype=torch.float32)
 
                     #i am skipping this block because i want to keep everything batch first to ensure uniformity
+                    with torch.no_grad():
+                        asset_to_domain_sig_domain = (
+                            torch.stack(asset_to_domain_sig_domain)    # (num_assets, batch, dim)
+                            .permute(1, 0, 2)                          # → (batch, num_assets, dim)
+                            .to(DomainAG.device)
+                        )
 
-                    asset_to_domain_sig_domain = (
-                        torch.stack(asset_to_domain_sig_domain)    # (num_assets, batch, dim)
-                        .permute(1, 0, 2)                          # → (batch, num_assets, dim)
-                        .to(DomainAG.device)
-                    )
+                        # if not asset_to_domain_sig_domain:
+                        #     # Make a dummy tensor if empty to prevent crash
+                        #     asset_to_domain_sig_domain = torch.zeros(
+                        #         (1, len(domain_wise_tickers[domain]), DomainAG.h_asset_dim),
+                        #         device=DomainAG.device
+                        #     )
+                        # else:
+                        #     asset_to_domain_sig_domain = (
+                        #         torch.stack(asset_to_domain_sig_domain)
+                        #         .permute(1, 0, 2)
+                        #         .to(DomainAG.device)
+                        #     )
+
                     # print(CYAN, "asset to domain sig domain stacked" , asset_to_domain_sig_domain, ENDC)
                     alloc_val = domain_allocs[0][domain_idx]  #  this is not batch first when printed.
                     # print(GREEN, "alloc val: ", alloc_val, ENDC)
@@ -399,85 +419,92 @@ def train():
                     elif alloc_val.ndim == 3:
                         alloc_val = alloc_val.squeeze(0)  #remove extra dim if already present
                     else:
-                        pass
+                            pass
                     # print(GREEN, "alloc val: ", alloc_val, ENDC)
                     # print(BLUE + "h_assets: " , asset_to_domain_sig_domain , ENDC)
                     actions, total_logprob, value, alloc_distn = DomainAG.act(asset_to_domain_sig_domain, alloc_val, domain_mem[domain_idx])
-                    allocations = actions[0].detach() #Keeping batch dimensions
-                    print(GREEN , "all allocations (domain output)" , allocations, ENDC)    
-                    dtom = actions[1].detach()
-                    mem_update = actions[2].detach()
 
-                    asset_allocs[domain_idx] = allocations.squeeze(0)  #remove batch dim
-                    domain_mem[domain_idx] += domain_mem_param * mem_update
+                    with torch.no_grad():
+                        allocations = actions[0].detach() #Keeping batch dimensions
+                        print(GREEN , "all allocations (domain output)" , allocations, ENDC)    
+                        dtom = actions[1].detach()
+                        mem_update = actions[2].detach()
 
-                    if(len(domain_buffer)==0):
-                        # print(CYAN, "First value in domain rollouts being stored: h_assets ", asset_to_domain_sig_domain, ENDC)
-                        domain_buffer["h_assets"] = asset_to_domain_sig_domain
-                        domain_buffer["domain_memory"] = domain_mem[domain_idx]
-                        domain_buffer["master_alloc"] = alloc_val
-                        domain_buffer["allocations"] = allocations
-                        domain_buffer["dtom"] = dtom
-                        domain_buffer["mem_update"] = mem_update
-                        domain_buffer["returns"] = r_t_domain.unsqueeze(0)
-                        domain_buffer["old_logprobs"] = total_logprob
-                        domain_buffer["advantages"] = value
-                    else:
-                        # print(CYAN, "Next value in domain rollouts being stored: h_assets ", asset_to_domain_sig_domain, ENDC)
-                        domain_buffer["h_assets"] = torch.cat([domain_buffer["h_assets"], asset_to_domain_sig_domain], dim=0)
-                        # print(CYAN + "domain h_assets shape stored: ", asset_to_domain_sig_domain, ENDC)
-                        domain_buffer["domain_memory"] = torch.cat([domain_buffer["domain_memory"], domain_mem[domain_idx]], dim=0)
-                        domain_buffer["master_alloc"] = torch.cat([domain_buffer["master_alloc"], alloc_val], dim=0)
-                        domain_buffer["allocations"] = torch.cat([domain_buffer["allocations"], allocations], dim=0)
-                        domain_buffer["dtom"] = torch.cat([domain_buffer["dtom"], dtom], dim=0)
-                        domain_buffer["mem_update"] = torch.cat([domain_buffer["mem_update"], mem_update], dim=0)
-                        domain_buffer["returns"] = torch.cat([domain_buffer["returns"], torch.tensor(r_t_domain).unsqueeze(0)], dim=0)
-                        domain_buffer["old_logprobs"] = torch.cat([domain_buffer["old_logprobs"], total_logprob], dim=0)
-                        domain_buffer["advantages"] = torch.cat([domain_buffer["advantages"], value], dim=0)
+                        asset_allocs[domain_idx] = allocations.squeeze(0)  #remove batch dim
+                        domain_mem[domain_idx] += domain_mem_param * mem_update
+
+                        if(len(domain_buffer)==0):
+                            # print(CYAN, "First value in domain rollouts being stored: h_assets ", asset_to_domain_sig_domain, ENDC)
+                            domain_buffer["h_assets"] = asset_to_domain_sig_domain.detach()
+                            domain_buffer["domain_memory"] = domain_mem[domain_idx].detach()
+                            domain_buffer["master_alloc"] = alloc_val.detach()
+                            domain_buffer["allocations"] = allocations.detach()
+                            domain_buffer["dtom"] = dtom.detach()
+                            domain_buffer["mem_update"] = mem_update.detach()
+                            domain_buffer["returns"] = r_t_domain.detach().unsqueeze(0)
+                            domain_buffer["old_logprobs"] = total_logprob.detach()
+                            domain_buffer["advantages"] = value.detach()
+                        else:
+                            # print(CYAN, "Next value in domain rollouts being stored: h_assets ", asset_to_domain_sig_domain, ENDC)
+                            domain_buffer["h_assets"] = torch.cat([domain_buffer["h_assets"], asset_to_domain_sig_domain.detach()], dim=0)
+                            # print(CYAN + "domain h_assets shape stored: ", asset_to_domain_sig_domain, ENDC)
+                            domain_buffer["domain_memory"] = torch.cat([domain_buffer["domain_memory"], domain_mem[domain_idx].detach()], dim=0)
+                            domain_buffer["master_alloc"] = torch.cat([domain_buffer["master_alloc"], alloc_val.detach()], dim=0)
+                            domain_buffer["allocations"] = torch.cat([domain_buffer["allocations"], allocations.detach()], dim=0)
+                            domain_buffer["dtom"] = torch.cat([domain_buffer["dtom"], dtom.detach()], dim=0)
+                            domain_buffer["mem_update"] = torch.cat([domain_buffer["mem_update"], mem_update.detach()], dim=0)
+                            domain_buffer["returns"] = torch.cat([domain_buffer["returns"], torch.tensor(r_t_domain).detach().unsqueeze(0)], dim=0)
+                            domain_buffer["old_logprobs"] = torch.cat([domain_buffer["old_logprobs"], total_logprob.detach()], dim=0)
+                            domain_buffer["advantages"] = torch.cat([domain_buffer["advantages"], value.detach()], dim=0)
 
 
-                    domain_to_master_signals.append(dtom)
-                    master_returns += domain_allocs[0][domain_idx] * r_t_domain
-                    print(MAGENTA + "domain done" + ENDC)
-
-                # master
-                domain_to_master_signals = (
-                        torch.stack(domain_to_master_signals)    # [num_domains,batch, dtom_dim] 
-                        .permute(1, 0, 2)                          # → (batch, num_domains, dtom_dim)
-                        .to(MasterAG.device)
-                )
+                        domain_to_master_signals.append(dtom)
+                        master_returns += domain_allocs[0][domain_idx] * r_t_domain
+                        print(MAGENTA + "domain done" + ENDC)
+                
+                with torch.no_grad():
+                    # master
+                    domain_to_master_signals = (
+                            torch.stack(domain_to_master_signals)    # [num_domains,batch, dtom_dim] 
+                            .permute(1, 0, 2)                          # → (batch, num_domains, dtom_dim)
+                            .to(MasterAG.device)
+                    )
 
                 master_actions, total_logprob, value, alloc_distn = MasterAG.act(domain_to_master_signals, master_mem)
-                allocations = master_actions[0].detach()  #keeping batch first => that's why not applying squeeze(0)
-                mem_update = master_actions[1].detach()
-                domain_allocs = allocations #keep as it is                     #DOUBT HERE ******
-                print(GREEN , "all allocations (master output)" , allocations, ENDC)
-                master_mem += master_mem_param * mem_update
 
-                if(len(master_buffer)==0):
-                    # print(MAGENTA, "First value in master rollouts being stored: h_assets ", asset_to_domain_sig_domain, ENDC)
-                    master_buffer["h_domains"] = domain_to_master_signals
-                    master_buffer["master_memory"] = master_mem
-                    master_buffer["allocations"] = allocations
-                    master_buffer["mem_update"] = mem_update
-                    master_buffer["returns"] = master_returns.unsqueeze(0)
-                    master_buffer["old_logprobs"] = total_logprob
-                    master_buffer["advantages"] = value
-                else:
-                    # print(MAGENTA, "Next value in master rollouts being stored: h_assets ", domain_to_master_signals, ENDC)
-                    master_buffer["h_domains"] = torch.cat([master_buffer["h_domains"], domain_to_master_signals], dim=0)
-                    master_buffer["master_memory"] = torch.cat([master_buffer["master_memory"], master_mem], dim=0)
-                    master_buffer["allocations"] = torch.cat([master_buffer["allocations"], allocations], dim=0)
-                    master_buffer["mem_update"] = torch.cat([master_buffer["mem_update"], mem_update], dim=0)
-                    master_buffer["returns"] = torch.cat([master_buffer["returns"], torch.tensor(master_returns).unsqueeze(0)], dim=0)
-                    master_buffer["old_logprobs"] = torch.cat([master_buffer["old_logprobs"], total_logprob], dim=0)
-                    master_buffer["advantages"] = torch.cat([master_buffer["advantages"], value], dim=0)
+                with torch.no_grad():
+                    allocations = master_actions[0].detach()  #keeping batch first => that's why not applying squeeze(0)
+                    mem_update = master_actions[1].detach()
+                    domain_allocs = allocations #keep as it is                     #DOUBT HERE ******
+                    print(GREEN , "all allocations (master output)" , allocations, ENDC)
+                    master_mem += master_mem_param * mem_update
+
+                    if(len(master_buffer)==0):
+                        # print(MAGENTA, "First value in master rollouts being stored: h_assets ", asset_to_domain_sig_domain, ENDC)
+                        master_buffer["h_domains"] = domain_to_master_signals.detach()
+                        master_buffer["master_memory"] = master_mem.detach()
+                        master_buffer["allocations"] = allocations.detach()
+                        master_buffer["mem_update"] = mem_update.detach()
+                        master_buffer["returns"] = master_returns.detach().unsqueeze(0)
+                        master_buffer["old_logprobs"] = total_logprob.detach()
+                        master_buffer["advantages"] = value.detach()
+                    else:
+                        # print(MAGENTA, "Next value in master rollouts being stored: h_assets ", domain_to_master_signals, ENDC)
+                        master_buffer["h_domains"] = torch.cat([master_buffer["h_domains"], domain_to_master_signals.detach()], dim=0)
+                        master_buffer["master_memory"] = torch.cat([master_buffer["master_memory"], master_mem.detach()], dim=0)
+                        master_buffer["allocations"] = torch.cat([master_buffer["allocations"], allocations.detach()], dim=0)
+                        master_buffer["mem_update"] = torch.cat([master_buffer["mem_update"], mem_update.detach()], dim=0)
+                        master_buffer["returns"] = torch.cat([master_buffer["returns"], torch.tensor(master_returns).detach().unsqueeze(0)], dim=0)
+                        master_buffer["old_logprobs"] = torch.cat([master_buffer["old_logprobs"], total_logprob.detach()], dim=0)
+                        master_buffer["advantages"] = torch.cat([master_buffer["advantages"], value.detach()], dim=0)
 
                 print(WHITE + f"one asset-domain-master cycle (window: {window_idx}) done -----------------------------------------------------" + ENDC)
 
 
             print(BRIGHT_MAGENTA + "upadating all agents" + ENDC)
             AssetAG.update_policy(asset_buffer)
+            print(MAGENTA + "asset agent updated" + ENDC)
             DomainAG.update_policy(domain_buffer)
+            print(MAGENTA + "domain agent updated" + ENDC)
             MasterAG.update_policy(master_buffer)
             print(BRIGHT_MAGENTA + "updates done!" + ENDC)
