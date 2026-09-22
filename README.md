@@ -1,18 +1,16 @@
 # SwanField — Hierarchical Multi-Agent Reinforcement Learning for Portfolio Management
 
-SwanField is a **hierarchical multi-agent deep reinforcement learning framework for portfolio management**.
+SwanField is a **hierarchical multi-agent deep reinforcement learning framework for portfolio management**.
 
 The framework consists of three levels of decision-making agents:
 
-1. **Asset-level agents** — specialize in individual assets.
-
-2. **Domain-level agents** — aggregate information across related assets/sectors.
-
-3. **Master agent** — aggregates domain-level information and determines the overall portfolio allocation.
+1. **Asset-level agents** — specialize in individual assets.
+2. **Domain-level agents** — aggregate information across related assets/sectors.
+3. **Master agent** — aggregates domain-level information and determines the overall portfolio allocation.
 
 The architecture is inspired by how a hierarchical portfolio-management organization could operate: specialized asset managers communicate with domain/sector managers, who in turn communicate with a master portfolio manager.
 
-The agents use **Proximal Policy Optimization (PPO)** with actor-critic architectures and stochastic policies.
+The agents use **Proximal Policy Optimization (PPO)** with actor-critic architectures and stochastic policies.
 
 ---
 
@@ -28,23 +26,18 @@ The information flow is:
 
 Each asset agent receives:
 
-* sequential asset data,
-
-* non-sequential information such as allocation/memory information,
-
-* and produces four stochastic actions.
+- sequential asset data,
+- non-sequential information such as allocation/memory information,
+- and produces four stochastic actions.
 
 The asset policy consists of:
 
 1. **BUY / HOLD / SELL**
-
 2. **Signal sent to the domain agent**
-
 3. **Memory update**
-
 4. **Trade fraction**
 
-The implementation uses an LSTM/GRU-based sequence encoder followed by a shared representation and multiple actor heads. The sequence encoder produces the final recurrent hidden representation `hseq`.
+The implementation uses an LSTM/GRU-based sequence encoder followed by a shared representation and multiple actor heads. The sequence encoder produces the final recurrent hidden representation `hseq`.
 
 ---
 
@@ -52,23 +45,31 @@ The implementation uses an LSTM/GRU-based sequence encoder followed by a shared 
 
 Let the sequential input for an asset be
 
-\(X_t = \{x_{t-T+1}, \ldots, x_t\}\)
+$$
+Xt={xt-T+1,…,xt}
+$$
 
-where `T` is the sequence length.
+where `T` is the sequence length.
 
 The recurrent encoder produces
 
-\(h_{\mathrm{seq},t} = \operatorname{RNN}(X_t)\)
+$$
+hseq,t=RNN(Xt)
+$$
 
 where the RNN can be an LSTM or GRU.
 
 For an LSTM:
 
-\((h_t, c_t) = \operatorname{LSTM}(x_t, h_{t-1}, c_{t-1})\)
+$$
+(ht,ct)=LSTM(xt,ht-1,ct-1)
+$$
 
 and the final hidden state is used as the sequence representation:
 
-\(h_{\mathrm{seq}} = h_T\)
+$$
+hseq=hT.
+$$
 
 In the implementation, the final recurrent hidden state is returned as the asset's sequence encoding.
 
@@ -78,13 +79,17 @@ In the implementation, the final recurrent hidden state is returned as the asset
 
 The sequential representation is concatenated with non-sequential information:
 
-\(x_t^{\mathrm{asset}} = [h_{\mathrm{seq},t} \,\|\, x_t^{\mathrm{nonseq}}]\)
+$$
+xtasset=[hseq,t \Vert xtnonseq]
+$$
 
-where `\|\|` denotes concatenation.
+where `∣∣` denotes concatenation.
 
 The shared hidden representation is
 
-\(h_t = \tanh\!\left(W_h x_t^{\mathrm{asset}} + b_h\right)\)
+$$
+ht=tanh(Whxtasset+bh).
+$$
 
 In the implementation, this shared representation is used by all actor heads and the critic.
 
@@ -94,11 +99,15 @@ In the implementation, this shared representation is used by all actor heads and
 
 The asset policy is a joint stochastic policy:
 
-\(\pi_\theta(a_t \mid s_t) = \pi_\theta^{\mathrm{BHS}}\pi_\theta^{\mathrm{signal}}\pi_\theta^{\mathrm{memory}}\pi_\theta^{\mathrm{fraction}}\)
+$$
+\pi\theta(at∣st)=\pi\thetaBHS \pi\thetasignal \pi\thetamemory \pi\thetafraction.
+$$
 
 The complete action is
 
-\(a_t = (a_t^{\mathrm{BHS}}, a_t^{\mathrm{signal}}, a_t^{\mathrm{memory}}, a_t^{\mathrm{fraction}})\)
+$$
+at=(atBHS,atsignal,atmemory,atfraction).
+$$
 
 ---
 
@@ -106,23 +115,33 @@ The complete action is
 
 The first actor head produces three logits:
 
-\(z_t = W_{\mathrm{BHS}}h_t + b_{\mathrm{BHS}}\)
+$$
+zt=WBHSht+bBHS
+$$
 
 where
 
-\(z_t \in \mathbb{R}^3\)
+$$
+zt\in R3.
+$$
 
 The logits are converted into probabilities using softmax:
 
-\(\pi_\theta^{\mathrm{BHS}}(a\mid s_t) = \frac{e^{z_{t,a}}}{\sum_{j=1}^{3}e^{z_{t,j}}}\)
+$$
+\pi\thetaBHS(a∣st)=ezt,a\sumj=13ezt,j.
+$$
 
 Therefore,
 
-\(a_t^{\mathrm{BHS}} \sim \operatorname{Categorical}(\pi_\theta^{\mathrm{BHS}})\)
+$$
+atBHS\simCategorical(\pi\thetaBHS).
+$$
 
 The three actions are:
 
-\(A_{\mathrm{BHS}} = \{\mathrm{BUY},\mathrm{HOLD},\mathrm{SELL}\}\)
+$$
+ABHS={BUY,HOLD,SELL}.
+$$
 
 The implementation constructs this distribution directly from the actor logits.
 
@@ -134,27 +153,37 @@ The asset agent also generates a continuous signal for the domain agent.
 
 The mean is
 
-\(\mu_t^{AD} = W_\mu^{AD}h_t + b_\mu^{AD}\)
+$$
+\mutAD=W\muADht+b\muAD
+$$
 
 and the raw log-standard-deviation output is
 
-\(\ell_t^{AD} = W_\sigma^{AD}h_t + b_\sigma^{AD}\)
+$$
+ℓtAD=W\sigmaADht+b\sigmaAD.
+$$
 
 The implementation clamps this value to maintain a minimum standard deviation:
 
-\(\tilde{\ell}_t^{AD} = \max\!\left(\ell_t^{AD}, \log(\sigma_{\min})\right)\)
+$$
+ℓ~tAD=max(ℓtAD,log(\sigmamin)).
+$$
 
 The standard deviation is then
 
-\(\sigma_t^{AD} = \exp\!\left(\tilde{\ell}_t^{AD}\right)\)
+$$
+\sigmatAD=exp(ℓ~tAD).
+$$
 
 Therefore the asset-to-domain signal is sampled from
 
-\(a_t^{AD} \sim \mathcal{N}\!\left(\mu_t^{AD},(\sigma_t^{AD})^2\right)\)
+$$
+atAD\simN(\mutAD,(\sigmatAD)2).
+$$
 
-For `d` signal dimensions, this represents `d` independent Gaussian variables.
+For `d` signal dimensions, this represents `d` independent Gaussian variables.
 
-The implementation uses `Normal(mean, std)` for this actor head.
+The implementation uses `Normal(mean, std)` for this actor head.
 
 ---
 
@@ -162,15 +191,23 @@ The implementation uses `Normal(mean, std)` for this actor head.
 
 The memory head generates a continuous memory update:
 
-\(\mu_t^M = W_\mu^M h_t + b_\mu^M\)
+$$
+\mutM=W\muMht+b\muM
+$$
 
-\(\ell_t^M = W_\sigma^M h_t + b_\sigma^M\)
+$$
+ℓtM=W\sigmaMht+b\sigmaM
+$$
 
-\(\sigma_t^M = \exp\!\left(\max\!\left(\ell_t^M,\log\sigma_{\min}\right)\right)\)
+$$
+\sigmatM=exp(max(ℓtM,log\sigmamin)).
+$$
 
 The memory update is sampled as
 
-\(a_t^M \sim \mathcal{N}\!\left(\mu_t^M,(\sigma_t^M)^2\right)\)
+$$
+atM\simN(\mutM,(\sigmatM)2).
+$$
 
 Thus, the agent can maintain a learned continuous internal state across timesteps.
 
@@ -182,25 +219,35 @@ The implementation contains separate mean and standard-deviation heads for this 
 
 The trade-fraction head determines what fraction of the available position/capital should be involved in the trade.
 
-The mean is constrained to `[0,1]`:
+The mean is constrained to `[0,1]`:
 
-\(\mu_t^F = \sigma\!\left(W_\mu^Fh_t+b_\mu^F\right)\)
+$$
+\mutF=\sigma(W\muFht+b\muF)
+$$
 
 where
 
-\(\sigma(x) = \frac{1}{1+e^{-x}}\)
+$$
+\sigma(x)=\frac{1}{1+e^{-x.
+$$
 
 The standard deviation is
 
-\(\sigma_t^F = \exp\!\left(\max\!\left(\ell_t^F,\log\sigma_{\min}\right)\right)\)
+$$
+\sigmatF=exp(max(ℓtF,log\sigmamin)).
+$$
 
 The trade fraction is sampled from
 
-\(a_t^F \sim \mathcal{N}\!\left(\mu_t^F,(\sigma_t^F)^2\right)\)
+$$
+atF\simN(\mutF,(\sigmatF)2).
+$$
 
 The sampled value is finally clipped to the valid interval:
 
-\(a_t^F = \operatorname{clip}(a_t^F,0,1)\)
+$$
+atF=clip(atF,0,1).
+$$
 
 This corresponds to the implementation's sigmoid mean followed by sampling and clipping.
 
@@ -210,17 +257,23 @@ This corresponds to the implementation's sigmoid mean followed by sampling and c
 
 Because the asset action consists of multiple stochastic components, the total log-probability is the sum of the component log-probabilities:
 
-\(\log\pi_\theta(a_t\mid s_t) = \log\pi^{\mathrm{BHS}}+\log\pi^{AD}+\log\pi^M+\log\pi^F\)
+$$
+log\pi\theta(at∣st)=log\piBHS+log\piAD+log\piM+log\piF.
+$$
 
 For the Gaussian components,
 
-\(\log\pi^{AD} = \sum_i \log\mathcal{N}\!\left(a_{t,i}^{AD};\mu_{t,i}^{AD},(\sigma_{t,i}^{AD})^2\right)\)
+$$
+log\piAD=\sumilogN(at,iAD;\mut,iAD,(\sigmat,iAD)2)
+$$
 
 and similarly for memory and trade fraction.
 
 Therefore:
 
-\(\log\pi_\theta(a_t\mid s_t) = \log\pi^{\mathrm{BHS}}+\sum_i\log\pi_i^{AD}+\sum_i\log\pi_i^M+\sum_i\log\pi_i^F\)
+$$
+log\pi\theta(at∣st)=log\piBHS+\sumilog\piAD,i+\sumilog\piM,i+\sumilog\piF,i
+$$
 
 The implementation explicitly constructs this sum before storing the PPO log-probability.
 
@@ -228,15 +281,19 @@ The implementation explicitly constructs this sum before storing the PPO log-pro
 
 # 4. Asset Critic
 
-The critic shares the common hidden representation `h_t` with the actor heads.
+The critic shares the common hidden representation `ht` with the actor heads.
 
 It estimates the state value:
 
-\(V_\phi(s_t) = W_Vh_t+b_V\)
+$$
+V\phi(st)=WVht+bV.
+$$
 
 Thus,
 
-\(V_\phi(s_t) \approx \mathbb{E}\!\left[\sum_{k=0}^{\infty}\gamma^k r_{t+k}\mid s_t\right]\)
+$$
+V\phi(st)\approxE[\sumk=0\infty\gammakrt+k∣st].
+$$
 
 The implementation produces this scalar through a linear critic head.
 
@@ -255,21 +312,28 @@ NVDA ─┤
 GOOG ─┼──> Tech Domain Agent
 TSLA ─┤
 ...  ─┘
+
 ```
 
 Each asset produces an embedding
 
-\(h_i^{\mathrm{asset}}\)
+$$
+hiasset
+$$
 
 which is provided to the domain agent.
 
-The domain agent uses an **attention pooling mechanism** to aggregate these asset representations:
+The domain agent uses an **attention pooling mechanism** to aggregate these asset representations:
 
-\(H_{\mathrm{assets}} = \{h_1,\ldots,h_N\}\)
+$$
+Hassets={h1,…,hN}.
+$$
 
 The attention mechanism produces:
 
-\(h^{\mathrm{domain}} = \operatorname{AttentionPool}(H_{\mathrm{assets}})\)
+$$
+hdomain=AttentionPool(Hassets).
+$$
 
 This creates a fixed-size domain representation regardless of the number/order of individual asset representations.
 
@@ -279,19 +343,21 @@ This creates a fixed-size domain representation regardless of the number/order o
 
 The domain agent receives three sources of information:
 
-\(x_t^D = [h^{\mathrm{domain}}\|\ m_t^D\|\ s_t^{M\to D}]\)
+$$
+xtD=[hdomain \Vert mtD \Vert stM\to D].
+$$
 
 where:
 
-* `h_domain` = pooled asset representation,
-
-* `m_t^D` = domain memory,
-
-* `s_t^{M→D}` = signal from the master agent.
+- `hdomain` = pooled asset representation,
+- `mtD` = domain memory,
+- `stM→D` = signal from the master agent.
 
 The shared domain representation is then
 
-\(h_t^D = \operatorname{ReLU}(W_Dx_t^D+b_D)\)
+$$
+htD=ReLU(WDxtD+bD).
+$$
 
 This corresponds to concatenating the attention-pooled asset representation, master signal, and memory before the shared network.
 
@@ -302,48 +368,60 @@ This corresponds to concatenating the attention-pooled asset representation, mas
 The domain agent produces three outputs:
 
 1. **Asset allocation**
-
 2. **Domain → Master signal**
-
 3. **Memory update**
 
 ---
 
 ## 6.1 Asset Allocation with a Dirichlet Policy
 
-Instead of independently predicting each asset's allocation, the domain agent produces the concentration parameters of a **Dirichlet distribution**.
+Instead of independently predicting each asset's allocation, the domain agent produces the concentration parameters of a **Dirichlet distribution**.
 
 The network first produces raw outputs:
 
-\(z_t^D = W_{\mathrm{alloc}}h_t^D+b_{\mathrm{alloc}}\)
+$$
+ztD=WallochtD+balloc.
+$$
 
 These are converted into positive concentration parameters:
 
-\(\alpha_t = \operatorname{softplus}(z_t^D)+\epsilon\)
+$$
+\alphat=softplus(ztD)+ϵ.
+$$
 
 where
 
-\(\alpha_{t,i}>0\)
+$$
+\alphat,i>0.
+$$
 
 The allocation vector is then sampled as
 
-\(a_t^D \sim \operatorname{Dirichlet}(\alpha_t)\)
+$$
+atD\simDirichlet(\alphat).
+$$
 
 Therefore,
 
-\(a_t^D = [a_{t,1},a_{t,2},\ldots,a_{t,N},a_{t,\mathrm{cash}}]\)
+$$
+atD=[at,1,at,2,…,at,N,at,cash]
+$$
 
 with
 
-\(a_{t,i}\ge 0\)
+$$
+at,i\ge0
+$$
 
 and
 
-\(\sum_i a_{t,i}=1\)
+$$
+\sumiat,i=1
+$$
 
 This naturally represents portfolio allocation because the outputs form a probability-simplex vector.
 
-The implementation uses `softplus(raw_alpha) + 1e-3` to ensure positive Dirichlet concentration parameters.
+The implementation uses `softplus(raw_alpha) + 1e-3` to ensure positive Dirichlet concentration parameters.
 
 ---
 
@@ -351,13 +429,19 @@ The implementation uses `softplus(raw_alpha) + 1e-3` to ensure positive Dirichle
 
 The domain agent produces a continuous signal to the master agent:
 
-\(\mu_t^{DM}=W_\mu^{DM}h_t^D+b_\mu^{DM}\)
+$$
+\mutDM=W\muDMhtD+b\muDM
+$$
 
-\(\sigma_t^{DM}=\exp\!\left(\max\!\left(W_\sigma^{DM}h_t^D+b_\sigma^{DM},\log\sigma_{\min}\right)\right)\)
+$$
+\sigmatDM=exp(max(W\sigmaDMhtD+b\sigmaDM,log\sigmamin)).
+$$
 
 The signal is sampled as
 
-\(a_t^{DM}\sim\mathcal{N}\!\left(\mu_t^{DM},(\sigma_t^{DM})^2\right)\)
+$$
+atDM\simN(\mutDM,(\sigmatDM)2).
+$$
 
 Thus the master agent receives learned stochastic signals from each domain agent.
 
@@ -367,15 +451,21 @@ Thus the master agent receives learned stochastic signals from each domain agent
 
 Similarly,
 
-\(\mu_t^{M,D}=W_\mu^{M,D}h_t^D+b_\mu^{M,D}\)
+$$
+\mutM,D=W\muM,DhtD+b\muM,D
+$$
 
 and
 
-\(\sigma_t^{M,D}=\exp\!\left(\max\!\left(W_\sigma^{M,D}h_t^D+b_\sigma^{M,D},\log\sigma_{\min}\right)\right)\)
+$$
+\sigmatM,D=exp(max(W\sigmaM,DhtD+b\sigmaM,D,log\sigmamin)).
+$$
 
 Then
 
-\(m_{t+1}^D\sim\mathcal{N}\!\left(\mu_t^{M,D},(\sigma_t^{M,D})^2\right)\)
+$$
+mt+1D\simN(\mutM,D,(\sigmatM,D)2).
+$$
 
 ---
 
@@ -383,7 +473,9 @@ Then
 
 The domain critic estimates:
 
-\(V_\phi^D(s_t^D)=W_V^Dh_t^D+b_V^D\)
+$$
+V\phiD(stD)=WVDhtD+bVD.
+$$
 
 Therefore the domain agent has its own value function describing the expected future return from the domain's current state.
 
@@ -393,15 +485,21 @@ Therefore the domain agent has its own value function describing the expected fu
 
 The domain action consists of:
 
-\(a_t^D=(a_t^{\mathrm{alloc}},a_t^{DM},a_t^{M,D})\)
+$$
+atD=(atalloc,atDM,atM,D).
+$$
 
 Its joint policy is therefore:
 
-\(\pi_\theta^D=\pi_\theta^{\mathrm{alloc}}\pi_\theta^{DM}\pi_\theta^{M,D}\)
+$$
+\pi\thetaD=\pi\thetaalloc\pi\thetaDM\pi\thetaM,D.
+$$
 
 The joint log-probability is
 
-\(\log\pi_\theta^D(a_t\mid s_t)=\log\pi_\theta^{\mathrm{alloc}}+\log\pi_\theta^{DM}+\log\pi_\theta^{M,D}\)
+$$
+log\pi\thetaD(at∣st)=log\pi\thetaalloc+log\pi\thetaDM+log\pi\thetaM,D
+$$
 
 which is exactly the quantity used to construct the PPO probability ratio.
 
@@ -413,19 +511,27 @@ The master agent sits at the highest level of the hierarchy.
 
 It receives the representations generated by the domain agents:
 
-\(H^D=\{h_1^D,h_2^D,\ldots,h_K^D\}\)
+$$
+HD={h1D,h2D,…,hKD}.
+$$
 
 These are aggregated using attention pooling:
 
-\(h_t^M=\operatorname{AttentionPool}(H^D)\)
+$$
+htM=AttentionPool(HD).
+$$
 
 The master representation is then combined with master memory:
 
-\(x_t^M=[h_t^M\|\ m_t^M]\)
+$$
+xtM=[htM \Vert mtM].
+$$
 
 The shared master representation is
 
-\(h_t=\operatorname{ReLU}(W_Mx_t^M+b_M)\)
+$$
+ht=ReLU(WMxtM+bM).
+$$
 
 ---
 
@@ -435,23 +541,33 @@ The master agent produces allocations across domains plus a cash allocation.
 
 Raw allocation outputs are:
 
-\(z_t^M=W_{\mathrm{alloc}}^Mh_t^M+b_{\mathrm{alloc}}^M\)
+$$
+ztM=WallocMhtM+ballocM.
+$$
 
 These are transformed into Dirichlet concentration parameters:
 
-\(\alpha_t^M=\operatorname{softplus}(z_t^M)+\epsilon\)
+$$
+\alphatM=softplus(ztM)+ϵ.
+$$
 
 The master allocation is sampled from:
 
-\(a_t^M\sim\operatorname{Dirichlet}(\alpha_t^M)\)
+$$
+atM\simDirichlet(\alphatM)
+$$
 
 where
 
-\(a_t^M=[a_{t,1}^{\mathrm{domain}},\ldots,a_{t,K}^{\mathrm{domain}},a_{t,\mathrm{cash}}]\)
+$$
+atM=[at,1domain,…,at,Kdomain,at,cash]
+$$
 
 and
 
-\(\sum_i a_{t,i}^M=1\)
+$$
+\sumiat,iM=1.
+$$
 
 Thus, the master agent determines the high-level allocation across domains while the domain agents determine allocations within those domains.
 
@@ -461,13 +577,19 @@ Thus, the master agent determines the high-level allocation across domains while
 
 The master memory update is represented by a Gaussian policy:
 
-\(\mu_t^M=W_\mu^Mh_t+b_\mu^M\)
+$$
+\mutM=W\muMht+b\muM
+$$
 
-\(\sigma_t^M=\exp\!\left(\max\!\left(W_\sigma^Mh_t+b_\sigma^M,\log\sigma_{\min}\right)\right)\)
+$$
+\sigmatM=exp(max(W\sigmaMht+b\sigmaM,log\sigmamin)).
+$$
 
 The new memory is sampled as
 
-\(m_{t+1}^M\sim\mathcal{N}\!\left(\mu_t^M,(\sigma_t^M)^2\right)\)
+$$
+mt+1M\simN(\mutM,(\sigmatM)2).
+$$
 
 ---
 
@@ -475,7 +597,9 @@ The new memory is sampled as
 
 The master critic estimates the value of the global portfolio state:
 
-\(V_\phi^M(s_t)=W_V^Mh_t+b_V^M\)
+$$
+V\phiM(st)=WVMht+bVM.
+$$
 
 This provides the value estimate used to calculate the PPO advantage and critic loss.
 
@@ -483,15 +607,19 @@ This provides the value estimate used to calculate the PPO advantage and critic 
 
 # 13. PPO Training
 
-All three levels use **Proximal Policy Optimization (PPO)**.
+All three levels use **Proximal Policy Optimization (PPO)**.
 
-For a transition `t`, let:
+For a transition `t`, let:
 
-\(r_t(\theta)=\frac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{\mathrm{old}}}(a_t\mid s_t)}\)
+$$
+rt(\theta)=\pi\theta(at∣st)\pi\thetaold(at∣st).
+$$
 
 Using log-probabilities:
 
-\(r_t(\theta)=\exp\!\left(\log\pi_\theta(a_t\mid s_t)-\log\pi_{\theta_{\mathrm{old}}}(a_t\mid s_t)\right)\)
+$$
+rt(\theta)=exp(log\pi\theta(at∣st)-log\pi\thetaold(at∣st))
+$$
 
 This is the exact probability ratio used by the implementation.
 
@@ -501,9 +629,11 @@ This is the exact probability ratio used by the implementation.
 
 The PPO actor uses an estimated advantage:
 
-\(A_t=R^t-V_\phi(s_t)\)
+$$
+At=R^t-V\phi(st)
+$$
 
-where `R^t` is the estimated return.
+where `R^t` is the estimated return.
 
 The advantage measures whether the selected action performed better or worse than expected under the critic's estimate.
 
@@ -513,23 +643,33 @@ The advantage measures whether the selected action performed better or worse tha
 
 The two surrogate objectives are:
 
-\(L_t^{\mathrm{CLIP}}=r_t(\theta)A_t\)
+$$
+LtCLIP=rt(\theta)At
+$$
 
 and
 
-\(\tilde L_t^{\mathrm{CLIP}}=\operatorname{clip}\!\left(r_t(\theta),1-\epsilon,1+\epsilon\right)A_t\)
+$$
+L~tCLIP=clip(rt(\theta),1-ϵ,1+ϵ)At.
+$$
 
 The PPO objective is:
 
-\(L^{\mathrm{CLIP}}=\mathbb{E}_t\!\left[\min\!\left(r_tA_t,\operatorname{clip}(r_t,1-\epsilon,1+\epsilon)A_t\right)\right]\)
+$$
+LCLIP=Et[min(rtAt,clip(rt,1-ϵ,1+ϵ)At)]
+$$
 
 where the implementation uses
 
-\(\epsilon=0.2\)
+$$
+ϵ=0.2.
+$$
 
 The actor loss is the negative of this objective:
 
-\(L_{\mathrm{actor}}=-\mathbb{E}_t\!\left[\min\!\left(r_tA_t,\operatorname{clip}(r_t,1-\epsilon,1+\epsilon)A_t\right)\right]\)
+$$
+Lactor=-Et[min(rtAt,clip(rt,1-ϵ,1+ϵ)At)].
+$$
 
 This clipping prevents the updated policy from moving excessively far from the old policy.
 
@@ -539,11 +679,15 @@ This clipping prevents the updated policy from moving excessively far from the o
 
 The critic is trained using mean squared error between the estimated return and value prediction:
 
-\(L_{\mathrm{value}}=\mathbb{E}_t\!\left[(R^t-V_\phi(s_t))^2\right]\)
+$$
+Lvalue=Et[(R^t-V\phi(st))2]
+$$
 
 The implementation uses this directly as:
 
-\((return-value)^2\)
+$$
+(return-value)2.
+$$
 
 ---
 
@@ -551,21 +695,29 @@ The implementation uses this directly as:
 
 Entropy encourages the policy to retain exploration.
 
-For a policy `π`:
+For a policy `π`:
 
-\(H(\pi)=-\mathbb{E}_{a\sim\pi}\!\left[\log\pi(a\mid s)\right]\)
+$$
+H(\pi)=-Ea\sim\pi[log\pi(a∣s)].
+$$
 
 For the multi-head asset policy:
 
-\(H_{\mathrm{asset}}=H_{\mathrm{BHS}}+H_{AD}+H_{\mathrm{memory}}+H_{\mathrm{fraction}}\)
+$$
+Hasset=HBHS+HAD+Hmemory+Hfraction.
+$$
 
 Similarly, the domain policy entropy is:
 
-\(H_{\mathrm{domain}}=H_{\mathrm{allocation}}+H_{DM}+H_{\mathrm{memory}}\)
+$$
+Hdomain=Hallocation+HDM+Hmemory.
+$$
 
 The master policy entropy is:
 
-\(H_{\mathrm{master}}=H_{\mathrm{allocation}}+H_{\mathrm{memory}}\)
+$$
+Hmaster=Hallocation+Hmemory.
+$$
 
 ---
 
@@ -573,15 +725,21 @@ The master policy entropy is:
 
 The total optimization objective combines the actor, critic, and entropy terms:
 
-\(L=L_{\mathrm{actor}}+c_1L_{\mathrm{value}}-c_2H\)
+$$
+L=Lactor+c1Lvalue-c2H
+$$
 
 where:
 
-\(c_1=0.5\)
+$$
+c1=0.5
+$$
 
 is the value-loss coefficient and
 
-\(c_2=0.01\)
+$$
+c2=0.01
+$$
 
 is the entropy coefficient.
 
@@ -597,13 +755,17 @@ After computing the total loss, gradients are backpropagated through the shared 
 
 Gradient clipping is applied:
 
-\(\lVert\nabla_\theta L\rVert_2\le 0.5\)
+$$
+\|∇\thetaL\|2\le0.5
+$$
 
-by clipping the gradient norm to a maximum of `0.5`.
+by clipping the gradient norm to a maximum of `0.5`.
 
 The optimizer is Adam with a default learning rate of:
 
-\(\alpha=3\times10^{-4}\)
+$$
+\alpha=3\times10-4.
+$$
 
 ---
 
@@ -611,25 +773,35 @@ The optimizer is Adam with a default learning rate of:
 
 The overall decision process can be summarized mathematically as:
 
-**### Asset level**
+### Asset level
 
-\(X_i\to h_i^{\mathrm{asset}}\to\{\mathrm{BUY/HOLD/SELL},\ \mathrm{Trade\ fraction},\ \mathrm{Memory\ update},\ \mathrm{Asset\to Domain\ signal}\}\)
+$$
+Xi\to hiasset\to {BUY/HOLD/SELLTrade fractionMemory updateAsset\to Domain signal
+$$
 
-**### Domain level**
+### Domain level
 
-\(\{h_i^{\mathrm{asset}}\}\to\operatorname{AttentionPool}\to h^{\mathrm{domain}}\to\{\mathrm{Asset\ allocations},\ \mathrm{Domain\to Master\ signal},\ \mathrm{Memory\ update}\}\)
+$$
+{hiasset}\to AttentionPool\to hdomain\to {Asset allocationsDomain\to Master signalMemory update
+$$
 
-**### Master level**
+### Master level
 
-\(\{h_j^{\mathrm{domain}}\}\to\operatorname{AttentionPool}\to h^{\mathrm{master}}\to\{\mathrm{Domain\ allocations},\ \mathrm{Memory\ update}\}\)
+$$
+{hjdomain}\to AttentionPool\to hmaster\to {Domain allocationsMemory update
+$$
 
 Therefore:
 
-\(\mathrm{Assets}\to\mathrm{Domains}\to\mathrm{Master}\)
+$$
+Assets\to Domains\to Master
+$$
 
 for information aggregation, while:
 
-\(\mathrm{Master}\to\mathrm{Domains}\to\mathrm{Assets}\)
+$$
+Master\to Domains\to Assets
+$$
 
 provides hierarchical allocation/control signals.
 
@@ -641,15 +813,19 @@ The asset-level reward is designed to emphasize profitability during periods of 
 
 The current conceptual objective is to reward returns generated under volatile market conditions rather than simply maximizing raw returns.
 
-For a portfolio return `R_t`, the framework can be expressed conceptually as:
+For a portfolio return `Rt`, the framework can be expressed conceptually as:
 
-\(r_t^{\mathrm{portfolio}}=\log\!\left(\frac{P_t}{P_{t-1}}\right)\)
+$$
+rtportfolio=log(PtPt-1)
+$$
 
 with the reward incorporating a volatility-dependent component:
 
-\(r_t=f\!\left(r_t^{\mathrm{portfolio}},\sigma_t^{\mathrm{market}}\right)\)
+$$
+rt=f(rtportfolio,\sigmatmarket).
+$$
 
-The intention is to encourage policies that can exploit or remain resilient during high-volatility regimes, forming the basis of the project's **anti-fragility** objective.
+The intention is to encourage policies that can exploit or remain resilient during high-volatility regimes, forming the basis of the project's **anti-fragility** objective.
 
 ---
 
@@ -659,11 +835,15 @@ Asset agents use parameter sharing.
 
 Instead of learning independent networks:
 
-\(\theta_1,\theta_2,\ldots,\theta_N\)
+$$
+\theta1,\theta2,…,\thetaN
+$$
 
-for `N` assets, the agents share a common parameter set:
+for `N` assets, the agents share a common parameter set:
 
-\(\theta_{\mathrm{asset},1}=\theta_{\mathrm{asset},2}=\cdots=\theta_{\mathrm{asset},N}=\theta_{\mathrm{shared}}\)
+$$
+\thetaasset,1=\thetaasset,2=⋯=\thetaasset,N=\thetashared
+$$
 
 while receiving different asset-specific observations.
 
@@ -677,32 +857,32 @@ The same principle is used for domain-level agents.
 
 Conceptually, SwanField therefore optimizes a hierarchy of stochastic policies:
 
-\(\pi=\{\pi_{\mathrm{asset}},\pi_{\mathrm{domain}},\pi_{\mathrm{master}}\}\)
+$$
+\pi={\piasset,\pidomain,\pimaster}.
+$$
 
 The complete system can be viewed as:
 
-\(\mathrm{Market\ Data}\to\mathrm{Asset\ Policies}\to\mathrm{Domain\ Policies}\to\mathrm{Master\ Policy}\to\mathrm{Portfolio\ Allocation}\)
+$$
+Market Data\to Asset Policies\to Domain Policies\to Master Policy\to Portfolio Allocation
+$$
 
 while feedback flows in the opposite direction:
 
-\(\mathrm{Master\ Signal}\to\mathrm{Domain\ Policies}\to\mathrm{Asset\ Policies}\)
+$$
+Master Signal\to Domain Policies\to Asset Policies
+$$
 
 The resulting architecture combines:
 
-* hierarchical multi-agent reinforcement learning,
+- hierarchical multi-agent reinforcement learning,
+- PPO actor-critic optimization,
+- recurrent sequence modelling,
+- attention-based hierarchical aggregation,
+- stochastic continuous policies,
+- Dirichlet portfolio allocation,
+- learned memory,
+- parameter sharing,
+- and volatility-aware reward design.
 
-* PPO actor-critic optimization,
 
-* recurrent sequence modelling,
-
-* attention-based hierarchical aggregation,
-
-* stochastic continuous policies,
-
-* Dirichlet portfolio allocation,
-
-* learned memory,
-
-* parameter sharing,
-
-* and volatility-aware reward design.
