@@ -100,7 +100,7 @@ In the implementation, this shared representation is used by all actor heads and
 The asset policy is a joint stochastic policy:
 
 $$
-\pi\theta(at∣st)=\pi\thetaBHS \pi\thetasignal \pi\thetamemory \pi\thetafraction.
+\pi\theta(at∣st)=\pi{\theta}_{BHS} \pi {\theta}_{signal} \pi{\theta}_memory \pi{\theta}_fraction.
 $$
 
 The complete action is
