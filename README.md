@@ -253,7 +253,7 @@ $$
 The sampled value is finally clipped to the valid interval:
 
 $$
-a_t^{\mathrm{F}} = \operatorname{clip}(a_t^{\mathrm{F}},0,1).
+a_t^{\mathrm{F}} = {clip}(a_t^{\mathrm{F}},0,1).
 $$
 
 This corresponds to the implementation's sigmoid mean followed by sampling and clipping.
@@ -345,7 +345,7 @@ $$
 The attention mechanism produces:
 
 $$
-h_{\mathrm{domain}} = \operatorname{AttentionPool}(H_{\mathrm{assets}}).
+h_{\mathrm{domain}} = {AttentionPool}(H_{\mathrm{assets}}).
 $$
 
 This creates a fixed-size domain representation regardless of the number/order of individual asset representations.
@@ -371,7 +371,7 @@ where:
 The shared domain representation is then
 
 $$
-h_t^{\mathrm{D}} = \operatorname{ReLU}(W_{\mathrm{D}}x_t^{\mathrm{D}}+b_{\mathrm{D}}).
+h_t^{\mathrm{D}} = {ReLU}(W_{\mathrm{D}}x_t^{\mathrm{D}}+b_{\mathrm{D}}).
 $$
 
 This corresponds to concatenating the attention-pooled asset representation, master signal, and memory before the shared network.
@@ -403,7 +403,7 @@ $$
 These are converted into positive concentration parameters:
 
 $$
-\alpha_t = \operatorname{softplus}(z_t^{\mathrm{D}})+\epsilon.
+\alpha_t = {softplus}(z_t^{\mathrm{D}})+\epsilon.
 $$
 
 where
@@ -415,7 +415,7 @@ $$
 The allocation vector is then sampled as
 
 $$
-a_t^{\mathrm{D}}\sim\operatorname{Dirichlet}(\alpha_t).
+a_t^{\mathrm{D}}\sim{Dirichlet}(\alpha_t).
 $$
 
 Therefore,
@@ -535,7 +535,7 @@ $$
 These are aggregated using attention pooling:
 
 $$
-h_t^{\mathrm{M}}=\operatorname{AttentionPool}(H_{\mathrm{D}}).
+h_t^{\mathrm{M}}={AttentionPool}(H_{\mathrm{D}}).
 $$
 
 The master representation is then combined with master memory:
@@ -547,7 +547,7 @@ $$
 The shared master representation is
 
 $$
-h_t=\operatorname{ReLU}(W_{\mathrm{M}}x_t^{\mathrm{M}}+b_{\mathrm{M}}).
+h_t={ReLU}(W_{\mathrm{M}}x_t^{\mathrm{M}}+b_{\mathrm{M}}).
 $$
 
 \---
@@ -565,13 +565,13 @@ $$
 These are transformed into Dirichlet concentration parameters:
 
 $$
-\alpha_t^{\mathrm{M}}=\operatorname{softplus}(z_t^{\mathrm{M}})+\epsilon.
+\alpha_t^{\mathrm{M}}={softplus}(z_t^{\mathrm{M}})+\epsilon.
 $$
 
 The master allocation is sampled from:
 
 $$
-a_t^{\mathrm{M}}\sim\operatorname{Dirichlet}(\alpha_t^{\mathrm{M}})
+a_t^{\mathrm{M}}\sim{Dirichlet}(\alpha_t^{\mathrm{M}})
 $$
 
 where
@@ -667,13 +667,13 @@ $$
 and
 
 $$
-\tilde{L}_t^{\mathrm{CLIP}}=\operatorname{clip}(r_t(\theta),1-\epsilon,1+\epsilon)A_t.
+\tilde{L}_t^{\mathrm{CLIP}}={clip}(r_t(\theta),1-\epsilon,1+\epsilon)A_t.
 $$
 
 The PPO objective is:
 
 $$
-L^{\mathrm{CLIP}}=\mathbb{E}_t[\min(r_tA_t,\operatorname{clip}(r_t,1-\epsilon,1+\epsilon)A_t)]
+L^{\mathrm{CLIP}}=\mathbb{E}_t[\min(r_tA_t,{clip}(r_t,1-\epsilon,1+\epsilon)A_t)]
 $$
 
 where the implementation uses
@@ -685,7 +685,7 @@ $$
 The actor loss is the negative of this objective:
 
 $$
-L_{\mathrm{actor}}=-\mathbb{E}_t[\min(r_tA_t,\operatorname{clip}(r_t,1-\epsilon,1+\epsilon)A_t)].
+L_{\mathrm{actor}}=-\mathbb{E}_t[\min(r_tA_t,{clip}(r_t,1-\epsilon,1+\epsilon)A_t)].
 $$
 
 This clipping prevents the updated policy from moving excessively far from the old policy.
@@ -799,13 +799,13 @@ $$
 **### Domain level**
 
 $$
-\{h_i^{\mathrm{asset}}\}\to\operatorname{AttentionPool}\to h^{\mathrm{domain}}\to\{\mathrm{Asset\ allocations,\ Domain\to Master\ signal,\ Memory\ update}\}
+\{h_i^{\mathrm{asset}}\}\to{AttentionPool}\to h^{\mathrm{domain}}\to\{\mathrm{Asset\ allocations,\ Domain\to Master\ signal,\ Memory\ update}\}
 $$
 
 **### Master level**
 
 $$
-\{h_j^{\mathrm{domain}}\}\to\operatorname{AttentionPool}\to h^{\mathrm{master}}\to\{\mathrm{Domain\ allocations,\ Memory\ update}\}
+\{h_j^{\mathrm{domain}}\}\to{AttentionPool}\to h^{\mathrm{master}}\to\{\mathrm{Domain\ allocations,\ Memory\ update}\}
 $$
 
 Therefore:
